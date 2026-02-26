@@ -1,7 +1,7 @@
 {
   "chunks_path": "D:\\study\\agent\\course_rag_mvp\\data\\processed\\chunks.jsonl",
-  "chunks_mtime": 1772013686,
-  "chunks_size": 7734107,
+  "chunks_mtime": 1772068261,
+  "chunks_size": 7523854,
   "backend": "local",
   "openai_model": null,
   "local_model": "all-MiniLM-L6-v2"
