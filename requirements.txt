@@ -1,0 +1,6 @@
+pypdf
+tqdm
+numpy
+faiss-cpu
+openai
+sentence-transformers

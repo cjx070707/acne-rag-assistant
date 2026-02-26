@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AcneAssistantRequest",
+  "type": "object",
+  "required": ["request_id", "question", "language", "mode"],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "language": {
+      "type": "string",
+      "enum": ["zh-CN", "en"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["education"]
+    },
+    "user_context": {
+      "type": "object",
+      "properties": {
+        "age_group": {
+          "type": "string",
+          "enum": ["child", "teen", "adult", "unknown"]
+        },
+        "sex": {
+          "type": "string",
+          "enum": ["female", "male", "other", "unknown"]
+        },
+        "pregnancy_possible": {
+          "type": "string",
+          "enum": ["yes", "no", "unknown"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "attachments": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "required": ["type", "uri"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["image", "pdf"]
+          },
+          "uri": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AcneAssistantResponse",
+  "type": "object",
+  "required": [
+    "request_id",
+    "status",
+    "answer",
+    "citations",
+    "safety",
+    "evidence_confidence"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "status": {
+      "type": "string",
+      "enum": ["answer", "refuse", "insufficient_evidence"]
+    },
+    "answer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["doc_id", "title", "source_url", "chunk_id"],
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "section": {
+            "type": ["string", "null"]
+          },
+          "chunk_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "safety": {
+      "type": "object",
+      "required": ["non_diagnostic", "non_prescription", "triage_level", "red_flags"],
+      "properties": {
+        "non_diagnostic": {
+          "type": "boolean"
+        },
+        "non_prescription": {
+          "type": "boolean"
+        },
+        "triage_level": {
+          "type": "string",
+          "enum": ["self_care", "pharmacist", "gp", "dermatologist", "gp_or_derm", "urgent_care"]
+        },
+        "red_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence_confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}
