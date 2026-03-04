@@ -72,10 +72,6 @@ def clean_page_text(raw: str) -> str:
         if re.fullmatch(r"[.\s]{20,}", s):
             continue
 
-        # 4) 过短且像页眉（可选：保守一点）
-        # if len(s) < 10:
-        #     continue
-
         lines.append(s)
 
     # 合并：把多空行压成一个空行，作为段落分隔
@@ -169,6 +165,72 @@ def extract_pages(pdf_path: str) -> List[str]:
     return pages_text
 
 
+# ==============================
+# NEW: guideline recommendation-level parser (minimal add)
+# ==============================
+def parse_guideline_recommendations(pdf_path: str, doc_id: str) -> List[Dict]:
+    reader = PdfReader(pdf_path)
+
+    # 关键：必须是“行首编号”，避免在句子里/表格里误触发
+    rec_pattern = re.compile(r"^\s*(\d+\.\d+\.\d+)\b")
+
+    chunks: List[Dict] = []
+    current_rec = None
+    current_text: List[str] = []
+    current_page = None
+
+    for page_idx, page in enumerate(reader.pages, start=1):
+        raw = page.extract_text() or ""
+        # 关键：复用你已有的清洗逻辑，去页眉页脚/版权/页码/目录点线
+        text = clean_page_text(raw)
+        if not text:
+            continue
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            m = rec_pattern.match(line)
+
+            if m:
+                rec_id = m.group(1)
+
+                # 防止同一个 rec_id 在跨页/引用里再次触发：如果 rec_id 没变，就当正文续写
+                if current_rec == rec_id:
+                    current_text.append(line)
+                    continue
+
+                # 保存上一个 recommendation
+                if current_rec and current_text:
+                    chunks.append({
+                        "chunk_id": f"{doc_id}_r_{current_rec.replace('.','_')}",
+                        "doc_id": doc_id,
+                        "rec_id": current_rec,
+                        "page": current_page,
+                        "text": "\n".join(current_text).strip(),
+                    })
+
+                current_rec = rec_id
+                current_text = [line]
+                current_page = page_idx
+            else:
+                if current_rec:
+                    current_text.append(line)
+
+    # flush last
+    if current_rec and current_text:
+        chunks.append({
+            "chunk_id": f"{doc_id}_r_{current_rec.replace('.','_')}",
+            "doc_id": doc_id,
+            "rec_id": current_rec,
+            "page": current_page,
+            "text": "\n".join(current_text).strip(),
+        })
+
+    return chunks
+
+
 def make_chunk_id(doc_id: str, page: int, idx: int) -> str:
     return f"{doc_id}_p{page:04d}_c{idx:03d}"
 
@@ -196,8 +258,37 @@ def ingest(
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"Missing PDF: {pdf_path} (doc_id={doc_id})")
 
-            pages = extract_pages(pdf_path)
             total_docs += 1
+
+            # ==============================
+            # NEW: only guideline uses rec-level parsing
+            # ==============================
+            if doc_id == "nice_ng198_guideline":
+                rec_chunks = parse_guideline_recommendations(pdf_path, doc_id)
+
+                for ch in rec_chunks:
+                    # keep metadata consistent with normal chunks
+                    rec = {
+                        "chunk_id": ch["chunk_id"],
+                        "doc_id": ch["doc_id"],
+                        "rec_id": ch.get("rec_id"),
+                        "page": ch.get("page"),
+                        "text": ch["text"],
+                        "title": doc.get("title"),
+                        "source": doc.get("source"),
+                        "year": doc.get("year"),
+                        "doc_type": doc.get("doc_type"),
+                        "jurisdiction": doc.get("jurisdiction"),
+                        "language": doc.get("language"),
+                        "file_path": pdf_path,
+                    }
+                    w.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    total_chunks += 1
+
+                continue  # important: skip normal page-chunk logic
+
+            # original logic for all other docs (unchanged)
+            pages = extract_pages(pdf_path)
 
             for i, page_text in enumerate(pages):
                 page_num = i + 1

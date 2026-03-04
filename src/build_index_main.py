@@ -12,7 +12,7 @@ THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS_DIR) if os.path.basename(THIS_DIR).lower() == "src" else THIS_DIR
 
 CHUNKS_PATH = os.path.join(REPO_ROOT, "data", "processed", "chunks_main.jsonl")
-INDEX_DIR = os.path.join(REPO_ROOT, "index_min")
+INDEX_DIR = os.path.join(REPO_ROOT, "index_main")
 FAISS_INDEX_PATH = os.path.join(INDEX_DIR, "faiss.index")
 ID_MAP_PATH = os.path.join(INDEX_DIR, "id_map.json")
 

@@ -1,0 +1,6 @@
+{
+  "hit@k": 1.0,
+  "mrr": 0.733,
+  "questions": 10,
+  "chunk_strategy": "recommendation_split"
+}
