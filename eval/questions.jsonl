@@ -1,67 +1,10 @@
-{"id":"q001","question":"According to NICE NG198, what is acne vulgaris?","gold_doc_ids":["nice_ng198_guideline"]}
-{"id":"q002","question":"In NICE NG198, what are the recommended first-line options for mild to moderate acne?","gold_doc_ids":["nice_ng198_guideline","e1_mild_moderate_network_meta","e2_mild_moderate_pairwise"]}
-{"id":"q003","question":"In NICE NG198, when should oral antibiotics be considered for acne?","gold_doc_ids":["nice_ng198_guideline","f1_moderate_severe_network_meta","f2_moderate_severe_pairwise"]}
-{"id":"q004","question":"In NICE NG198, what advice is given about topical retinoids (use and common side effects)?","gold_doc_ids":["nice_ng198_guideline","e1_mild_moderate_network_meta","e2_mild_moderate_pairwise","i_maintenance_treatment"]}
-{"id":"q005","question":"In NICE NG198, what advice is given about benzoyl peroxide (use and irritation management)?","gold_doc_ids":["nice_ng198_guideline","e1_mild_moderate_network_meta","e2_mild_moderate_pairwise"]}
-{"id":"q006","question":"In NICE NG198, what is the recommended review timeframe for acne treatment response?","gold_doc_ids":["nice_ng198_guideline","nice_evidence_a_information"]}
-{"id":"q007","question":"In NICE NG198, when should referral to a specialist be considered?","gold_doc_ids":["nice_ng198_guideline","nice_evidence_d_referral"]}
-{"id":"q008","question":"In NICE NG198, what is said about isotretinoin and who should consider it?","gold_doc_ids":["nice_ng198_guideline"]}
-{"id":"q009","question":"In NICE NG198, what factors influence treatment choice (severity, scarring risk, psychosocial impact)?","gold_doc_ids":["nice_ng198_guideline","l_risk_factors_scarring","m_management_scarring","nice_evidence_a_information"]}
-{"id":"q010","question":"In NICE NG198, what is the guidance on topical antibiotic use and combination therapy?","gold_doc_ids":["nice_ng198_guideline","e1_mild_moderate_network_meta","e2_mild_moderate_pairwise","f1_moderate_severe_network_meta","f2_moderate_severe_pairwise"]}
-{"id":"q011","question":"In NICE NG198, what is the guidance for managing acne during pregnancy or planning pregnancy?","gold_doc_ids":["nice_ng198_guideline"]}
-{"id":"q012","question":"In NICE NG198, what is recommended for maintenance after acne improves?","gold_doc_ids":["nice_ng198_guideline","i_maintenance_treatment"]}
-
-{"id":"q013","question":"In NICE evidence review A (Information), what information should be provided to people with acne?","gold_doc_id":"nice_evidence_a_information"}
-{"id":"q014","question":"In NICE evidence review A, what is discussed about supporting adherence to acne treatment?","gold_doc_id":"nice_evidence_a_information"}
-{"id":"q015","question":"In NICE evidence review A, what is discussed about psychological impact and support for acne?","gold_doc_id":"nice_evidence_a_information"}
-{"id":"q016","question":"In NICE evidence review A, what is discussed about expectations on time to see improvement?","gold_doc_id":"nice_evidence_a_information"}
-{"id":"q017","question":"In NICE evidence review A, what is discussed about providing written information or resources?","gold_doc_id":"nice_evidence_a_information"}
-
-{"id":"q018","question":"In NICE evidence review B (Skin care), what skin cleansing advice is recommended for acne?","gold_doc_id":"nice_evidence_b_skin_care"}
-{"id":"q019","question":"In NICE evidence review B, what is said about moisturisers and managing dryness/irritation?","gold_doc_id":"nice_evidence_b_skin_care"}
-{"id":"q020","question":"In NICE evidence review B, what is said about non-comedogenic products or cosmetics?","gold_doc_id":"nice_evidence_b_skin_care"}
-{"id":"q021","question":"In NICE evidence review B, what is said about sun protection and photosensitivity with acne treatments?","gold_doc_id":"nice_evidence_b_skin_care"}
-{"id":"q022","question":"In NICE evidence review B, what is discussed about skin care routines alongside topical treatments?","gold_doc_id":"nice_evidence_b_skin_care"}
-
-{"id":"q023","question":"In NICE evidence review C (Dietary interventions), what is said about diet and acne overall?","gold_doc_id":"nice_evidence_c_diet"}
-{"id":"q024","question":"In NICE evidence review C, what is said about low glycaemic index/load diets for acne?","gold_doc_id":"nice_evidence_c_diet"}
-{"id":"q025","question":"In NICE evidence review C, what is said about dairy intake and acne?","gold_doc_id":"nice_evidence_c_diet"}
-{"id":"q026","question":"In NICE evidence review C, what is said about chocolate or specific foods and acne?","gold_doc_id":"nice_evidence_c_diet"}
-{"id":"q027","question":"In NICE evidence review C, what conclusions are made about the strength/quality of diet evidence?","gold_doc_id":"nice_evidence_c_diet"}
-
-{"id":"q028","question":"In NICE evidence review D (Referral criteria), what are the criteria for referral to specialist acne services?","gold_doc_id":"nice_evidence_d_referral"}
-{"id":"q029","question":"In NICE evidence review D, what referral considerations relate to scarring or risk of scarring?","gold_doc_ids":["nice_evidence_d_referral","l_risk_factors_scarring","m_management_scarring"]}
-{"id":"q030","question":"In NICE evidence review D, what referral considerations relate to psychological distress?","gold_doc_id":"nice_evidence_d_referral"}
-{"id":"q031","question":"In NICE evidence review D, what referral considerations relate to treatment failure after an adequate trial?","gold_doc_id":"nice_evidence_d_referral"}
-{"id":"q032","question":"In NICE evidence review D, what referral considerations relate to severe acne presentations?","gold_doc_id":"nice_evidence_d_referral"}
-
-{"id":"q033","question":"In E1 (mild-to-moderate acne network meta-analysis), what treatments are compared and what outcomes are assessed?","gold_doc_id":"e1_mild_moderate_network_meta"}
-{"id":"q034","question":"In E1, what does network meta-analysis mean in the context of acne treatment comparisons?","gold_doc_id":"e1_mild_moderate_network_meta"}
-{"id":"q035","question":"In E1, what does the evidence suggest about combination topical therapies vs monotherapy for mild-to-moderate acne?","gold_doc_id":"e1_mild_moderate_network_meta"}
-{"id":"q036","question":"In E1, what are the key conclusions for managing mild-to-moderate acne based on the analysis?","gold_doc_id":"e1_mild_moderate_network_meta"}
-
-{"id":"q037","question":"In E2 (mild-to-moderate acne pairwise comparisons), what pairwise comparisons are included?","gold_doc_id":"e2_mild_moderate_pairwise"}
-{"id":"q038","question":"In E2, what does the evidence suggest about topical retinoids vs benzoyl peroxide (pairwise)?","gold_doc_id":"e2_mild_moderate_pairwise"}
-{"id":"q039","question":"In E2, what are the key conclusions for mild-to-moderate acne based on pairwise evidence?","gold_doc_id":"e2_mild_moderate_pairwise"}
-
-{"id":"q040","question":"In F1 (moderate-to-severe acne network meta-analysis), what treatments are compared and what outcomes are assessed?","gold_doc_id":"f1_moderate_severe_network_meta"}
-{"id":"q041","question":"In F1, what are the key conclusions for managing moderate-to-severe acne based on the analysis?","gold_doc_id":"f1_moderate_severe_network_meta"}
-{"id":"q042","question":"In F1, what does the evidence suggest about oral antibiotics or systemic therapies for moderate-to-severe acne?","gold_doc_id":"f1_moderate_severe_network_meta"}
-{"id":"q043","question":"In F1, what does the evidence suggest about combination regimens for moderate-to-severe acne?","gold_doc_id":"f1_moderate_severe_network_meta"}
-
-{"id":"q044","question":"In F2 (moderate-to-severe acne pairwise comparisons), what pairwise comparisons are included?","gold_doc_id":"f2_moderate_severe_pairwise"}
-{"id":"q045","question":"In F2, what are the key conclusions for moderate-to-severe acne based on pairwise evidence?","gold_doc_id":"f2_moderate_severe_pairwise"}
-{"id":"q046","question":"In F2, what does the pairwise evidence suggest about systemic options vs topical options for moderate-to-severe acne?","gold_doc_id":"f2_moderate_severe_pairwise"}
-
-{"id":"q047","question":"In I (Maintenance treatment), what is meant by maintenance treatment for acne vulgaris and why is it used?","gold_doc_id":"i_maintenance_treatment"}
-{"id":"q048","question":"In I, which treatments are discussed for maintenance after acne improves?","gold_doc_id":"i_maintenance_treatment"}
-{"id":"q049","question":"In I, what evidence is discussed about relapse prevention or long-term control?","gold_doc_id":"i_maintenance_treatment"}
-{"id":"q050","question":"In I, what follow-up or review approach is discussed for maintenance treatment?","gold_doc_id":"i_maintenance_treatment"}
-
-{"id":"q051","question":"In L (Risk factors for scarring), what factors are associated with acne scarring risk?","gold_doc_id":"l_risk_factors_scarring"}
-{"id":"q052","question":"In L, what is discussed about severity, duration, or delayed treatment as scarring risk factors?","gold_doc_id":"l_risk_factors_scarring"}
-{"id":"q053","question":"In L, what is discussed about psychosocial impact or scarring prevention considerations?","gold_doc_id":"l_risk_factors_scarring"}
-
-{"id":"q054","question":"In M (Management of acne-associated scarring), what treatment options are discussed for acne scarring?","gold_doc_id":"m_management_scarring"}
-{"id":"q055","question":"In M, what outcomes or measures are used to assess improvement in acne scarring?","gold_doc_id":"m_management_scarring"}
-{"id":"q056","question":"In M, what key conclusions are made about management strategies for acne vulgaris-associated scarring?","gold_doc_id":"m_management_scarring"}
+{"id":"q001","question":"What are the recommended first-line treatments for mild to moderate acne?","gold_doc_id":"nice_ng198_guideline","gold_pages":[10,11,12,13,17]}
+{"id":"q002","question":"When should oral antibiotics be considered in acne management?","gold_doc_id":"nice_ng198_guideline","gold_pages":[10,12,13,16,17]}
+{"id":"q003","question":"When is oral isotretinoin appropriate for acne?","gold_doc_id":"nice_ng198_guideline","gold_pages":[17,18]}
+{"id":"q004","question":"When should a patient with acne be referred to a specialist?","gold_doc_id":"nice_ng198_guideline","gold_pages":[8,9]}
+{"id":"q005","question":"How should acne be managed during pregnancy or when planning pregnancy?","gold_doc_id":"nice_ng198_guideline","gold_pages":[15,16]}
+{"id":"q006","question":"What review timeframe is recommended to assess response to acne treatment?","gold_doc_id":"nice_ng198_guideline","gold_pages":[17]}
+{"id":"q007","question":"What advice is given about using topical retinoids, including common side effects?","gold_doc_id":"nice_ng198_guideline","gold_pages":[11,15]}
+{"id":"q008","question":"What advice is given about benzoyl peroxide, including how to manage irritation?","gold_doc_id":"nice_ng198_guideline","gold_pages":[11,15]}
+{"id":"q009","question":"What factors should influence treatment choice for acne (e.g. severity, scarring risk, psychosocial impact)?","gold_doc_id":"nice_ng198_guideline","gold_pages":[14,15,16,41,42]}
+{"id":"q010","question":"What is recommended for maintenance treatment after acne improves?","gold_doc_id":"nice_ng198_guideline","gold_pages":[24]}
