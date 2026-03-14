@@ -1,0 +1,9 @@
+{
+  "hit@k": 0.933,
+  "mrr": 0.822,
+  "questions": 30,
+  "chunk_strategy": "recommendation_split"
+}
+before reranked:
+Hit@3: 0.833
+MRR@3: 0.678

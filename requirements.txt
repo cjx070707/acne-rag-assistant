@@ -4,3 +4,4 @@ numpy
 faiss-cpu
 openai
 sentence-transformers
+langgraph

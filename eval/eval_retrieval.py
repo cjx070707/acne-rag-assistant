@@ -7,7 +7,7 @@ K = 3
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 QUESTIONS_PATH = os.path.join(THIS_DIR, "questions.jsonl")
-RESULTS_PATH = os.path.join(THIS_DIR, "retrieval_results.jsonl")
+RESULTS_PATH = os.path.join(THIS_DIR, "artifacts", "reranked_results_top20.jsonl")
 
 
 def load_jsonl(path: str) -> List[Dict]:
@@ -31,7 +31,7 @@ def main():
     results = load_jsonl(RESULTS_PATH)
 
     if not results:
-        raise RuntimeError("retrieval_results.jsonl is empty (run dump_retrieval_results.py first)")
+        raise RuntimeError("retrieval results are empty (run dump_retrieval_results.py first)")
 
     hit = 0
     mrr = 0.0
@@ -53,7 +53,18 @@ def main():
     n = len(results)
     print(f"Hit@{K}: {hit/n:.3f}")
     print(f"MRR@{K}: {mrr/n:.3f}")
+    print("QUESTIONS_PATH:", QUESTIONS_PATH)
+    print("RESULTS_PATH:", RESULTS_PATH)
+    print("RESULTS exists:", os.path.exists(RESULTS_PATH), "size:", os.path.getsize(RESULTS_PATH))
+    print("first topk len:", len(results[0].get("topk", [])))
+    BASELINE_PATH = os.path.join(THIS_DIR, "artifacts", "retrieval_results.jsonl")
 
+    baseline = load_jsonl(BASELINE_PATH)
+    reranked = load_jsonl(RESULTS_PATH)
 
+    for i in range(3):
+        b = [c["chunk_id"] for c in baseline[i]["topk"][:3]]
+        r = [c["chunk_id"] for c in reranked[i]["topk"][:3]]
+        print(baseline[i]["id"], "baseline:", b, "reranked:", r)
 if __name__ == "__main__":
     main()

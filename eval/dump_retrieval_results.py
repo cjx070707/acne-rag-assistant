@@ -14,14 +14,14 @@ import faiss
 from src.build_index import get_embedder, l2_normalize
 
 CHUNKS_PATH = os.path.join(REPO_ROOT, "data", "processed", "chunks_main.jsonl")
-INDEX_DIR = os.path.join(REPO_ROOT, "index_main")
+INDEX_DIR = os.path.join(REPO_ROOT, "artifacts", "index_main")
 FAISS_INDEX_PATH = os.path.join(INDEX_DIR, "faiss.index")
 ID_MAP_PATH = os.path.join(INDEX_DIR, "id_map.json")
 
 QUESTIONS_PATH = os.path.join(THIS_DIR, "questions.jsonl")
-OUT_PATH = os.path.join(THIS_DIR, "retrieval_results.jsonl")
+OUT_PATH = os.path.join(THIS_DIR, "artifacts", "retrieval_results.jsonl")
 
-TOPK = 3
+TOPK = 20
 
 
 def load_jsonl(path: str) -> List[Dict]:
@@ -77,6 +77,7 @@ def main():
     print(f"[INFO] questions = {len(questions)}  topk = {TOPK}")
 
     # dump retrieval results
+    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     with open(OUT_PATH, "w", encoding="utf-8") as out:
         for q in questions:
             qid = q["id"]
@@ -101,11 +102,22 @@ def main():
                         "doc_id": c.get("doc_id"),
                         "page": c.get("page"),
                         "score": float(score),
+                        "text": c["text"]
                     }
                 )
 
-            out.write(json.dumps({"id": qid, "topk": top}, ensure_ascii=False) + "\n")
 
+            out.write(
+                json.dumps(
+                    {
+                        "id": qid,
+                        "question": query,
+                        "topk": top
+                    },
+                    ensure_ascii=False
+                )
+                + "\n"
+            )
     print(f"[OK] wrote: {OUT_PATH}")
 
 

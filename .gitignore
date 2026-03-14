@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+
+# Build artifacts (can be regenerated)
+/artifacts/index/
+/artifacts/index_main/
+/artifacts/index_support/
+
+# Evaluation artifacts
+/eval/artifacts/
+
+# Python caches
+*.egg-info/

@@ -150,14 +150,39 @@ def extract_json(s: str) -> str:
     return s
 
 
-def call_llm_siliconflow(question: str, context: str, model_name: str) -> Dict[str, Any]:
+def _get_siliconflow_client():
     api_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("SILICONFLOW_API_KEY not set.")
 
     from openai import OpenAI
-    client = OpenAI(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
+    return OpenAI(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
 
+
+def call_llm_siliconflow_raw(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    model_name: str,
+    temperature: float = 0.0,
+    max_tokens: int = MAX_OUTPUT_TOKENS,
+) -> str:
+    client = _get_siliconflow_client()
+
+    resp = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    return (resp.choices[0].message.content or "").strip()
+
+
+def call_llm_siliconflow(question: str, context: str, model_name: str) -> Dict[str, Any]:
     system = (
         "You are a medical RAG assistant.\n"
         "Answer strictly based on the provided context.\n"
@@ -167,14 +192,14 @@ def call_llm_siliconflow(question: str, context: str, model_name: str) -> Dict[s
     )
     user = f"QUESTION:\n{question}\n\nCONTEXT:\n{context}\n\nReturn JSON only."
 
-    resp = client.chat.completions.create(
-        model=model_name,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+    txt = call_llm_siliconflow_raw(
+        system_prompt=system,
+        user_prompt=user,
+        model_name=model_name,
         temperature=0.0,
         max_tokens=MAX_OUTPUT_TOKENS,
     )
 
-    txt = (resp.choices[0].message.content or "").strip()
     try:
         obj = json.loads(extract_json(txt))
         if not isinstance(obj, dict):

@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import argparse
 from typing import List, Dict, Tuple, Callable
 
 import numpy as np
@@ -11,19 +12,37 @@ import faiss
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS_DIR) if os.path.basename(THIS_DIR).lower() == "src" else THIS_DIR
 
-CHUNKS_PATH = os.path.join(REPO_ROOT, "data", "processed", "chunks.jsonl")
-INDEX_DIR = os.path.join(REPO_ROOT, "index")
-FAISS_INDEX_PATH = os.path.join(INDEX_DIR, "faiss.index")
-ID_MAP_PATH = os.path.join(INDEX_DIR, "id_map.json")
-
-# Cache: embeddings + signature (so we don't recompute every time)
-EMB_CACHE_PATH = os.path.join(INDEX_DIR, "embeddings.npy")
-SIG_PATH = os.path.join(INDEX_DIR, "embeddings.sig.json")
-
 # Embedding backend
 OPENAI_MODEL = "text-embedding-3-small"
 LOCAL_MODEL = "all-MiniLM-L6-v2"
 BATCH_SIZE = 64
+
+# Target configs
+TARGET_CONFIG = {
+    "main": {
+        "chunks_path": os.path.join(REPO_ROOT, "data", "processed", "chunks_main.jsonl"),
+        "index_dir": os.path.join(REPO_ROOT, "artifacts", "index_main"),
+    },
+    "support": {
+        "chunks_path": os.path.join(REPO_ROOT, "data", "processed", "chunks_support.jsonl"),
+        "index_dir": os.path.join(REPO_ROOT, "artifacts", "index_support"),
+    },
+    "all": {
+        "chunks_path": os.path.join(REPO_ROOT, "data", "processed", "chunks.jsonl"),
+        "index_dir": os.path.join(REPO_ROOT, "artifacts", "index"),
+    },
+}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build FAISS index for different chunk sets.")
+    parser.add_argument(
+        "--target",
+        choices=["main", "support", "all"],
+        default="all",
+        help="Which chunk set to build index for",
+    )
+    return parser.parse_args()
 
 
 def ensure_dir(path: str) -> None:
@@ -44,7 +63,7 @@ def load_chunks(path: str) -> List[Dict]:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Bad JSON at line {line_no}: {e}") from e
     if not items:
-        raise RuntimeError("chunks.jsonl is empty")
+        raise RuntimeError(f"{path} is empty")
     return items
 
 
@@ -65,7 +84,6 @@ def get_embedder() -> Tuple[str, Callable[[List[str]], np.ndarray]]:
     model = SentenceTransformer(LOCAL_MODEL)
 
     def embed_texts(texts: List[str]) -> np.ndarray:
-        # model.encode 内部已做 batch，这里外面再分 batch 便于进度与可控
         arr = model.encode(
             texts,
             batch_size=min(BATCH_SIZE, 128),
@@ -84,19 +102,11 @@ def l2_normalize(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
 
 
 def build_faiss_index(embeddings: np.ndarray) -> faiss.Index:
-    # cosine similarity = normalize + inner product
     embeddings = l2_normalize(embeddings).astype(np.float32)
     dim = embeddings.shape[1]
     index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
     return index
-
-
-def atomic_write_bytes(path: str, data: bytes) -> None:
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
 
 
 def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
@@ -107,12 +117,6 @@ def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
 
 
 def make_signature(chunks_path: str, backend: str) -> Dict:
-    """
-    签名用于判断缓存是否可用：
-    - chunks 文件大小 + mtime
-    - embedding backend/model
-    够用且快（不做全文 hash，避免又变慢）
-    """
     st = os.stat(chunks_path)
     return {
         "chunks_path": os.path.abspath(chunks_path),
@@ -136,30 +140,46 @@ def save_signature(path: str, sig: Dict) -> None:
 
 
 def main():
-    ensure_dir(INDEX_DIR)
+    args = parse_args()
+    cfg = TARGET_CONFIG[args.target]
+
+    chunks_path = cfg["chunks_path"]
+    index_dir = cfg["index_dir"]
+    faiss_index_path = os.path.join(index_dir, "faiss.index")
+    id_map_path = os.path.join(index_dir, "id_map.json")
+    emb_cache_path = os.path.join(index_dir, "embeddings.npy")
+    sig_path = os.path.join(index_dir, "embeddings.sig.json")
+
+    ensure_dir(index_dir)
 
     t0 = time.perf_counter()
-    chunks = load_chunks(CHUNKS_PATH)
+    chunks = load_chunks(chunks_path)
     texts = [c["text"] for c in chunks]
     chunk_ids = [c["chunk_id"] for c in chunks]
     t_load = time.perf_counter()
 
     backend, embed_texts = get_embedder()
+    print(f"[INFO] target = {args.target}")
+    print(f"[INFO] chunks_path = {chunks_path}")
+    print(f"[INFO] index_dir = {index_dir}")
     print(f"[INFO] embedding backend = {backend}")
 
-    # -------- embeddings cache --------
-    sig_now = make_signature(CHUNKS_PATH, backend)
-    sig_old = load_signature(SIG_PATH)
+    sig_now = make_signature(chunks_path, backend)
+    sig_old = load_signature(sig_path)
 
     use_cache = (
         sig_old == sig_now
-        and os.path.exists(EMB_CACHE_PATH)
-        and os.path.getsize(EMB_CACHE_PATH) > 0
+        and os.path.exists(emb_cache_path)
+        and os.path.getsize(emb_cache_path) > 0
     )
 
     if use_cache:
-        embs = np.load(EMB_CACHE_PATH).astype(np.float32)
-        print(f"[OK] loaded cached embeddings: {EMB_CACHE_PATH} shape={embs.shape}")
+        embs = np.load(emb_cache_path).astype(np.float32)
+        print(f"[OK] loaded cached embeddings: {emb_cache_path} shape={embs.shape}")
+        if embs.shape[0] != len(chunk_ids):
+            raise RuntimeError(
+                f"Cached embeddings count mismatch: {embs.shape[0]} != {len(chunk_ids)}"
+            )
         t_embed = time.perf_counter()
     else:
         all_vecs = []
@@ -174,29 +194,25 @@ def main():
         if embs.shape[0] != len(chunk_ids):
             raise RuntimeError("Embedding count mismatch")
 
-        # cache embeddings + signature
-        np.save(EMB_CACHE_PATH, embs)
-        save_signature(SIG_PATH, sig_now)
-        print(f"[OK] cached embeddings: {EMB_CACHE_PATH} shape={embs.shape}")
+        np.save(emb_cache_path, embs)
+        save_signature(sig_path, sig_now)
+        print(f"[OK] cached embeddings: {emb_cache_path} shape={embs.shape}")
         t_embed = time.perf_counter()
 
-    # -------- build & write index (atomic) --------
     index = build_faiss_index(embs)
     t_index = time.perf_counter()
 
-    # write faiss index via temp file then replace (avoid half-written file)
-    tmp_index = FAISS_INDEX_PATH + ".tmp"
+    tmp_index = faiss_index_path + ".tmp"
     faiss.write_index(index, tmp_index)
-    os.replace(tmp_index, FAISS_INDEX_PATH)
+    os.replace(tmp_index, faiss_index_path)
 
-    atomic_write_text(ID_MAP_PATH, json.dumps(chunk_ids, ensure_ascii=False, indent=2))
+    atomic_write_text(id_map_path, json.dumps(chunk_ids, ensure_ascii=False, indent=2))
     t_write = time.perf_counter()
 
     print(f"[OK] index size = {index.ntotal}")
-    print(f"[OK] wrote: {FAISS_INDEX_PATH}")
-    print(f"[OK] wrote: {ID_MAP_PATH}")
+    print(f"[OK] wrote: {faiss_index_path}")
+    print(f"[OK] wrote: {id_map_path}")
 
-    # -------- timing report --------
     print(
         "[TIME] load_chunks:  %.2fs\n"
         "[TIME] embeddings:   %.2fs\n"

@@ -1,114 +1,144 @@
-# Acne RAG Assistant (MVP)
+# Acne Guideline RAG Agent
 
-## 1. 项目简介
-一个基于检索增强生成（RAG）的痤疮科普助手，用于提供**有引用依据**的通用健康科普信息与就医分流建议。
+一个基于 NICE NG198 acne guideline 的课程型 RAG 项目。系统优先检索主 guideline，在证据不足时再补充 evidence review 文档，并通过一个简单的 LangGraph agent 决定是直接回答、改写查询后二次检索，还是拒答。
 
-> 目标不是诊断或处方，而是“基于权威资料的科普 + 引用 + 拒答”。
+## Current Architecture
 
----
+主链路分成两部分：
 
-## 2. 项目目标（MVP）
-MVP 只解决这几件事：
-- 回答痤疮相关基础科普问题（概念、常见诱因、一般护理）
-- 给出引用来源（文档 / 页码 / 章节）
-- 对高风险问题或证据不足问题进行拒答
-- 输出结构化 JSON（便于后续接 API / 前端 / 评测）
+1. 离线构建
+   - `src/ingest.py`：读取 PDF，清洗页面文本，生成统一 `chunks.jsonl`
+   - `src/split_chunk.py`：把统一 chunk 拆成 `main` 和 `support`
+   - `src/build_index.py`：为 `main` / `support` / `all` 构建 embedding 与 FAISS 索引
 
----
+2. 在线问答
+   - `src/rag_core.py`：加载索引、向量检索、过滤低质量 chunk、构造上下文、调用 LLM
+   - `src/agent_graph.py`：两轮 agent 流程
+   - `src/rag_answer_siliconflow.py`：命令行入口
 
-## 3. 项目边界（必须严格遵守）
+## Retrieval Flow
 
-### ✅ In Scope（做）
-- 痤疮基础科普（定义、类型、常见误区）
-- 常见治疗方式的通用科普解释（不涉及处方剂量）
-- 一般护肤与生活方式建议（基于权威资料）
-- 何时建议咨询药师 / GP / 皮肤科（就医分流）
-- “这个结论来自哪里”的引用展示
-
-### ❌ Out of Scope（不做）
-- 诊断（不能判断“你这是不是痤疮/毛囊炎/玫瑰痤疮”）
-- 处方建议（不能推荐具体处方药、剂量、疗程）
-- 个体化用药方案调整
-- 图片诊断（MVP阶段不支持）
-- 紧急医疗处理建议
-
----
-
-## 4. 安全策略（Safety Policy）
-本项目为**科普助手**，不是医生替代品。
-
-### 基本原则
-- 非诊断（Non-diagnostic）
-- 非处方（Non-prescription）
-- 仅科普（Education only）
-- 证据不足时拒答（Insufficient evidence -> refuse）
-
-### 拒答/转介场景（示例）
-当用户请求以下内容时，应拒答或建议线下就医：
-- “帮我诊断是不是痤疮”
-- “给我开药 / 告诉我剂量”
-- “我怀孕了能不能吃XX药”
-- “症状严重/快速恶化/疼痛明显/可能感染”
-- “根据图片判断皮肤问题”
-
----
-
-## 5. 输入输出定义（I/O Contract）
-后续所有代码都围绕这里的结构实现。
-
-### 输入（Request）
-至少包含：
-- `request_id`
-- `question`
-- `language`
-- `attachments`（MVP可为空）
-- `mode`（如 `education`）
-
-### 输出（Response）
-至少包含：
-- `request_id`
-- `status`（`answer` / `refuse` / `insufficient_evidence`）
-- `answer`
-- `citations`
-- `safety`
-- `evidence_confidence`
-
-> 详细 JSON Schema 见：
-- `schemas/request.schema.json`
-- `schemas/response.schema.json`
-
----
-
-## 6. 数据来源策略（Knowledge Base Policy）
-为保证可信度，知识库优先使用：
-- 临床指南 / 官方医疗机构资料
-- 专业皮肤科协会 / 国家健康机构患者教育资料
-- 可追溯来源（保留 URL、标题、页码/章节）
-
-### 数据要求
-- 每条 chunk 必须可回溯到原文（doc/page/section）
-- 禁止使用无法验证来源的内容作为核心知识
-- 不编造引用
-
----
-
-## 7. 项目结构（当前阶段）
 ```text
-project/
-├─ README.md
-├─ schemas/
-│  ├─ request.schema.json
-│  └─ response.schema.json
-├─ data/
-│  ├─ raw_docs/
-│  │  └─ acne/
-│  │     ├─ pdf/
-│  │     ├─ web_html/
-│  │     ├─ web_md/
-│  │     └─ manifest.jsonl
-│  └─ processed/
-│     └─ acne/
-│        ├─ chunks.jsonl
-│        └─ ingest_report.json
-└─ src/
-   └─ ingest/
+User Query
+  -> retrieve main guideline
+  -> rerank
+  -> judge evidence
+      -> sufficient: answer
+      -> insufficient: rewrite query
+  -> retrieve main + support
+  -> rerank
+  -> judge evidence
+      -> sufficient: answer
+      -> insufficient: refuse
+```
+
+## Project Layout
+
+```text
+course_rag_mvp/
+├── src/                    # 主代码
+├── data/
+│   ├── raw_docs/           # 原始 PDF 与 manifest
+│   └── processed/          # 处理后的 chunks
+├── artifacts/
+│   ├── index_main/         # main corpus FAISS 与 embedding cache
+│   ├── index_support/      # support corpus FAISS 与 embedding cache
+│   └── index/              # unified corpus 索引（可选历史产物）
+├── eval/                   # 离线评测脚本
+├── scripts/                # 调试脚本
+├── archive/
+│   └── experiments/        # 历史实验记录
+├── schemas/                # 预留的 schema 文件，当前主链路未使用
+├── requirements.txt
+└── README.md
+```
+
+## Environment
+
+推荐使用 Python 3.11。
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+需要的环境变量：
+
+```bash
+export SILICONFLOW_API_KEY="your_key"
+```
+
+可选环境变量：
+
+```bash
+export OPENAI_API_KEY="your_key"           # 只有重建 embedding/index 时才需要
+export LOCAL_EMBED_MODEL="all-MiniLM-L6-v2"
+```
+
+## Run
+
+直接提问：
+
+```bash
+python -m src.rag_answer_siliconflow "What does NICE recommend for acne-related scarring?"
+```
+
+调试 agent 中间状态：
+
+```bash
+python scripts/debug_agent.py
+```
+
+## Rebuild Data Artifacts
+
+如果需要从原始文档重新构建：
+
+```bash
+python -m src.ingest
+python -m src.split_chunk
+python -m src.build_index --target main
+python -m src.build_index --target support
+```
+
+`artifacts/` 下的索引和 `eval/artifacts/` 下的评测输出都属于可再生成产物，不是核心源码。
+
+## Evaluation
+
+生成 baseline retrieval：
+
+```bash
+python eval/dump_retrieval_results.py
+```
+
+做 cross-encoder rerank：
+
+```bash
+python eval/rerank_cross_encoder.py
+```
+
+计算 Hit@k / MRR@k：
+
+```bash
+python eval/eval_retrieval.py
+```
+
+评测输出会写到 `eval/artifacts/`。
+
+## Cleanup Decisions
+
+本次整理遵循这些规则：
+
+- 根目录只保留源码、数据、评测、脚本和说明文档
+- 向量索引统一收进 `artifacts/`
+- 历史实验统一收进 `archive/experiments/`
+- 本地虚拟环境和缓存不进仓库
+- 调试脚本收进 `scripts/`，不与正式入口混放
+
+## Known Gaps
+
+- `schemas/` 当前未接入主运行链路，后续可以删除或接到 API 层
+- `artifacts/index/` 是 unified corpus 的历史索引，若确定不用可删除
+- `src/agent_graph.py` 仍在 import 时加载索引，后续可以改为懒加载或封装成类
+- 项目还没有正式测试目录，当前只有调试脚本
