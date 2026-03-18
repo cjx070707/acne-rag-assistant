@@ -1,99 +1,212 @@
+```md
 # Acne Guideline RAG Agent
 
-一个基于 NICE NG198 acne guideline 的课程型 RAG 项目。系统优先检索主 guideline，在证据不足时再补充 evidence review 文档，并通过一个简单的 LangGraph agent 决定是直接回答、改写查询后二次检索，还是拒答。
+基于 **NICE NG198 Acne Guideline** 的 RAG + Agent 医疗问答系统。
 
-## Current Architecture
+系统目标：
 
-主链路分成两部分：
+- 优先基于 **官方 guideline** 回答问题  
+- 当 guideline 证据不足时引入 **evidence review 文档**  
+- 通过 **LangGraph Agent** 判断证据是否充分  
+- 支持 **query rewrite + 二次检索**
 
-1. 离线构建
-   - `src/ingest.py`：读取 PDF，清洗页面文本，生成统一 `chunks.jsonl`
-   - `src/split_chunk.py`：把统一 chunk 拆成 `main` 和 `support`
-   - `src/build_index.py`：为 `main` / `support` / `all` 构建 embedding 与 FAISS 索引
+该项目主要用于 **RAG 检索策略与 Agent 决策逻辑实验**。
 
-2. 在线问答
-   - `src/rag_core.py`：加载索引、向量检索、过滤低质量 chunk、构造上下文、调用 LLM
-   - `src/agent_graph.py`：两轮 agent 流程
-   - `src/rag_answer_siliconflow.py`：命令行入口
+---
 
-## Retrieval Flow
+# 系统架构
 
-```text
+系统采用 **Guideline-first Retrieval Strategy**：
+
+```
+
+Guideline (main corpus)
+↓
+Evidence Review (support corpus)
+
+```
+
+优先检索 guideline 的原因：
+
+- guideline 是 **正式 recommendation**
+- evidence review 包含大量讨论性内容
+- 若先检索 evidence review 会污染 top-k 结果
+
+---
+
+# Agent Pipeline
+
+系统完整流程：
+
+```
+
 User Query
-  -> retrieve main guideline
-  -> rerank
-  -> judge evidence
-      -> sufficient: answer
-      -> insufficient: rewrite query
-  -> retrieve main + support
-  -> rerank
-  -> judge evidence
-      -> sufficient: answer
-      -> insufficient: refuse
+↓
+Retrieve (main guideline)
+↓
+Rerank
+↓
+Evidence Judge
+├─ sufficient → Answer
+└─ insufficient
+↓
+Rewrite Query
+↓
+Retrieve (main + support)
+↓
+Rerank
+↓
+Judge
+├─ sufficient → Answer
+└─ insufficient → Refuse
+
 ```
 
-## Project Layout
+---
 
-```text
+# 主要入口
+
+系统主入口：
+
+```
+
+src/rag_answer_siliconflow.py
+
+````
+
+运行方式：
+
+```bash
+python -m src.rag_answer_siliconflow "your question"
+````
+
+调用流程：
+
+```
+rag_answer_siliconflow
+    ↓
+agent_graph
+    ↓
+rag_core.retrieve
+    ↓
+rerank
+    ↓
+judge evidence
+    ↓
+generate answer
+```
+
+---
+
+# 项目结构
+
+```
 course_rag_mvp/
-├── src/                    # 主代码
-├── data/
-│   ├── raw_docs/           # 原始 PDF 与 manifest
-│   └── processed/          # 处理后的 chunks
-├── artifacts/
-│   ├── index_main/         # main corpus FAISS 与 embedding cache
-│   ├── index_support/      # support corpus FAISS 与 embedding cache
-│   └── index/              # unified corpus 索引（可选历史产物）
-├── eval/                   # 离线评测脚本
-├── scripts/                # 调试脚本
-├── archive/
-│   └── experiments/        # 历史实验记录
-├── schemas/                # 预留的 schema 文件，当前主链路未使用
-├── requirements.txt
-└── README.md
+
+src/                     # 核心代码
+ ├ agent_graph.py        # Agent 决策逻辑
+ ├ rag_core.py           # RAG 检索核心
+ ├ ingest.py             # 文档解析
+ ├ split_chunk.py        # 文档切块
+ ├ build_index.py        # 向量索引构建
+ └ rag_answer_siliconflow.py  # CLI入口
+
+data/
+ ├ raw_docs/             # 原始 PDF
+ └ processed/            # chunk 数据
+
+artifacts/
+ ├ index_main/           # guideline 索引
+ ├ index_support/        # evidence review 索引
+ └ index/                # unified corpus 历史索引
+
+eval/                    # 检索评测脚本
+
+scripts/                 # 调试脚本
+
+archive/
+ └ experiments/          # 历史实验记录
 ```
 
-## Environment
+---
 
-推荐使用 Python 3.11。
+# 核心模块说明
+
+### rag_core.py
+
+负责：
+
+* embedding
+* FAISS 检索
+* context 构建
+* LLM 调用
+
+---
+
+### agent_graph.py
+
+Agent 控制逻辑：
+
+* retrieve
+* rerank
+* evidence judge
+* query rewrite
+* answer / refuse
+
+使用 **LangGraph** 构建。
+
+---
+
+### build_index.py
+
+用于：
+
+* 生成 embedding
+* 构建 FAISS index
+
+输出：
+
+```
+artifacts/index_main
+artifacts/index_support
+```
+
+---
+
+# 环境配置
+
+推荐：
+
+```
+Python 3.11
+```
+
+创建环境：
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-需要的环境变量：
+需要环境变量：
 
 ```bash
 export SILICONFLOW_API_KEY="your_key"
 ```
 
-可选环境变量：
+可选：
 
 ```bash
-export OPENAI_API_KEY="your_key"           # 只有重建 embedding/index 时才需要
+export OPENAI_API_KEY="your_key"
 export LOCAL_EMBED_MODEL="all-MiniLM-L6-v2"
 ```
 
-## Run
+---
 
-直接提问：
+# 数据构建流程
 
-```bash
-python -m src.rag_answer_siliconflow "What does NICE recommend for acne-related scarring?"
-```
-
-调试 agent 中间状态：
-
-```bash
-python scripts/debug_agent.py
-```
-
-## Rebuild Data Artifacts
-
-如果需要从原始文档重新构建：
+如果需要从原始文档重新生成数据：
 
 ```bash
 python -m src.ingest
@@ -102,43 +215,95 @@ python -m src.build_index --target main
 python -m src.build_index --target support
 ```
 
-`artifacts/` 下的索引和 `eval/artifacts/` 下的评测输出都属于可再生成产物，不是核心源码。
+生成：
 
-## Evaluation
+```
+artifacts/index_main
+artifacts/index_support
+```
 
-生成 baseline retrieval：
+---
+
+# 检索评测
+
+生成检索结果：
 
 ```bash
 python eval/dump_retrieval_results.py
 ```
 
-做 cross-encoder rerank：
+rerank：
 
 ```bash
 python eval/rerank_cross_encoder.py
 ```
 
-计算 Hit@k / MRR@k：
+计算指标：
 
 ```bash
 python eval/eval_retrieval.py
 ```
 
-评测输出会写到 `eval/artifacts/`。
+当前指标：
 
-## Cleanup Decisions
+```
+Hit@k
+MRR@k
+```
 
-本次整理遵循这些规则：
+---
 
-- 根目录只保留源码、数据、评测、脚本和说明文档
-- 向量索引统一收进 `artifacts/`
-- 历史实验统一收进 `archive/experiments/`
-- 本地虚拟环境和缓存不进仓库
-- 调试脚本收进 `scripts/`，不与正式入口混放
+# 当前系统限制
 
-## Known Gaps
+当前版本仍存在一些问题：
 
-- `schemas/` 当前未接入主运行链路，后续可以删除或接到 API 层
-- `artifacts/index/` 是 unified corpus 的历史索引，若确定不用可删除
-- `src/agent_graph.py` 仍在 import 时加载索引，后续可以改为懒加载或封装成类
-- 项目还没有正式测试目录，当前只有调试脚本
+1. evidence judge 依赖 LLM，稳定性有限
+2. query rewrite 策略较简单
+3. chunk 仍可能切断 guideline recommendation
+4. evaluation dataset 较小
+
+---
+
+# 当前优化方向
+
+未来主要优化方向：
+
+### Retrieval
+
+* 优化 chunk 策略
+* 提高 guideline 命中率
+
+### Rerank
+
+* 尝试更强的 cross-encoder
+
+### Agent
+
+* 改进 evidence judge prompt
+* 优化 query rewrite
+
+### Evaluation
+
+* 扩展 question dataset
+* 增加 answer quality 评测
+
+---
+
+# 项目定位
+
+该项目用于实验 **Agentic RAG Architecture**：
+
+* guideline-first retrieval
+* dual corpus retrieval
+* evidence-aware reasoning
+* query rewrite
+* retrieval evaluation
+
+适合场景：
+
+* 医疗 guideline QA
+* 法规问答
+* 企业知识库
+
+```
+```
