@@ -1,185 +1,110 @@
-```md
 # Acne Guideline RAG Agent
 
-基于 **NICE NG198 Acne Guideline** 的 RAG + Agent 医疗问答系统。
+基于 NICE NG198 Acne Guideline 的 guideline-first clinical RAG 项目。系统目标不是开放式医学聊天，而是尽量基于 guideline recommendation 回答 acne 相关问题；当 primary guideline 证据不足时，才引入 support 文档补充，并在证据不足时拒答。
 
-系统目标：
+这个 README 同时承担两件事：
+- 帮当前使用者快速跑通项目
+- 让下一个 Codex 会话能立刻理解项目现状和下一步工作
 
-- 优先基于 **官方 guideline** 回答问题  
-- 当 guideline 证据不足时引入 **evidence review 文档**  
-- 通过 **LangGraph Agent** 判断证据是否充分  
-- 支持 **query rewrite + 二次检索**
+## Current Status
 
-该项目主要用于 **RAG 检索策略与 Agent 决策逻辑实验**。
+当前项目已经完成：
+- 主链路整理：`ingest -> split -> build_index -> retrieve -> judge -> rewrite -> answer/refuse`
+- 路径与产物统一：集中在 [src/config.py](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/src/config.py)
+- Agent 检索资源改为按需加载，避免 import 时直接加载大索引
+- 分层评测体系已建立
+- 最终版 benchmark `final_v1` 已创建
+- 旧版小样本 baseline 已完成并归档
 
----
+当前还没有完成：
+- `final_v1` 上的正式 baseline 复跑
+- 第一轮新的 retrieval 优化实验，建议从 `hybrid retrieval` 或 `metadata filtering` 开始
 
-# 系统架构
+## System Architecture
 
-系统采用 **Guideline-first Retrieval Strategy**：
+系统采用 guideline-first retrieval：
 
-```
-
-Guideline (main corpus)
-↓
-Evidence Review (support corpus)
-
-```
-
-优先检索 guideline 的原因：
-
-- guideline 是 **正式 recommendation**
-- evidence review 包含大量讨论性内容
-- 若先检索 evidence review 会污染 top-k 结果
-
----
-
-# Agent Pipeline
-
-系统完整流程：
-
-```
-
+```text
 User Query
-↓
-Retrieve (main guideline)
-↓
-Rerank
-↓
-Evidence Judge
-├─ sufficient → Answer
-└─ insufficient
-↓
-Rewrite Query
-↓
-Retrieve (main + support)
-↓
-Rerank
-↓
-Judge
-├─ sufficient → Answer
-└─ insufficient → Refuse
-
+-> Retrieve from main guideline
+-> Rerank
+-> Judge evidence sufficiency
+-> sufficient: answer
+-> insufficient: rewrite query
+-> Retrieve from main + support
+-> Rerank
+-> Judge again
+-> sufficient: answer
+-> insufficient: refuse
 ```
 
----
+设计原则：
+- `main guideline` 是 primary authority
+- `support` 只能补充，不能替代 recommendation
+- 若没有足够 primary evidence，系统应倾向拒答
 
-# 主要入口
+## Main Entry Points
 
-系统主入口：
-
-```
-
-src/rag_answer_siliconflow.py
-
-````
-
-运行方式：
+正式问答入口：
 
 ```bash
 python -m src.rag_answer_siliconflow "your question"
-````
-
-调用流程：
-
-```
-rag_answer_siliconflow
-    ↓
-agent_graph
-    ↓
-rag_core.retrieve
-    ↓
-rerank
-    ↓
-judge evidence
-    ↓
-generate answer
 ```
 
----
+调试入口：
 
-# 项目结构
-
+```bash
+python scripts/debug_agent.py
 ```
-course_rag_mvp/
 
-src/                     # 核心代码
- ├ agent_graph.py        # Agent 决策逻辑
- ├ rag_core.py           # RAG 检索核心
- ├ ingest.py             # 文档解析
- ├ split_chunk.py        # 文档切块
- ├ build_index.py        # 向量索引构建
- └ rag_answer_siliconflow.py  # CLI入口
+离线数据构建：
+
+```bash
+python -m src.ingest
+python -m src.split_chunk
+python -m src.build_index --target main
+python -m src.build_index --target support
+```
+
+## Repository Layout
+
+```text
+src/
+  agent_graph.py              Agent decision flow
+  rag_core.py                 Retrieval, context building, LLM calls
+  build_index.py              FAISS index construction
+  ingest.py                   PDF parsing and chunk creation
+  split_chunk.py              Split main vs support corpora
+  config.py                   Shared paths and repo-level configuration
 
 data/
- ├ raw_docs/             # 原始 PDF
- └ processed/            # chunk 数据
+  raw_docs/                   Source PDFs and manifests
+  processed/                  Chunk JSONL files
 
 artifacts/
- ├ index_main/           # guideline 索引
- ├ index_support/        # evidence review 索引
- └ index/                # unified corpus 历史索引
+  index_main/                 Main guideline FAISS index
+  index_support/              Support corpus FAISS index
+  index/                      Historical unified index
 
-eval/                    # 检索评测脚本
+eval/
+  datasets/                   Evaluation datasets
+  artifacts/                  Baseline and experiment outputs
+  *.py                        Evaluation scripts
 
-scripts/                 # 调试脚本
+tests/
+  Minimal unit tests
+
+scripts/
+  Debug helpers
 
 archive/
- └ experiments/          # 历史实验记录
+  experiments/                Historical experiment records
 ```
 
----
+## Environment Setup
 
-# 核心模块说明
-
-### rag_core.py
-
-负责：
-
-* embedding
-* FAISS 检索
-* context 构建
-* LLM 调用
-
----
-
-### agent_graph.py
-
-Agent 控制逻辑：
-
-* retrieve
-* rerank
-* evidence judge
-* query rewrite
-* answer / refuse
-
-使用 **LangGraph** 构建。
-
----
-
-### build_index.py
-
-用于：
-
-* 生成 embedding
-* 构建 FAISS index
-
-输出：
-
-```
-artifacts/index_main
-artifacts/index_support
-```
-
----
-
-# 环境配置
-
-推荐：
-
-```
-Python 3.11
-```
+推荐环境：
+- Python 3.11
 
 创建环境：
 
@@ -189,121 +114,127 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-需要环境变量：
+必须环境变量：
 
 ```bash
 export SILICONFLOW_API_KEY="your_key"
 ```
 
-可选：
+可选环境变量：
 
 ```bash
 export OPENAI_API_KEY="your_key"
 export LOCAL_EMBED_MODEL="all-MiniLM-L6-v2"
 ```
 
----
+## Tests And Validation
 
-# 数据构建流程
-
-如果需要从原始文档重新生成数据：
+运行单元测试：
 
 ```bash
-python -m src.ingest
-python -m src.split_chunk
-python -m src.build_index --target main
-python -m src.build_index --target support
+python -m unittest discover -s tests
 ```
 
-生成：
-
-```
-artifacts/index_main
-artifacts/index_support
-```
-
----
-
-# 检索评测
-
-生成检索结果：
+校验最终 benchmark：
 
 ```bash
-python eval/dump_retrieval_results.py
+python eval/validate_datasets.py --index-path eval/datasets/final_v1/index.json
 ```
 
-rerank：
+## Evaluation Overview
 
-```bash
-python eval/rerank_cross_encoder.py
-```
+项目评测分成四层，不再只看单一 retrieval 指标：
 
-计算指标：
+1. `retrieval_core`
+测能否找回正确 guideline 证据，并排到前面。
 
-```bash
-python eval/eval_retrieval.py
-```
+2. `qa_grounded`
+测在证据存在时，回答是否抓住 recommendation，且没有越出证据乱说。
 
-当前指标：
+3. `support_governance`
+测 support 文档何时只能补充、不能越权。
 
-```
-Hit@k
-MRR@k
-```
+4. `refusal_boundary`
+测系统是否能在越界、个体化建议、证据不足时拒答。
 
----
+## Final Benchmark
 
-# 当前系统限制
+后续正式实验统一使用：
+- [eval/datasets/final_v1/index.json](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/datasets/final_v1/index.json)
+- 说明文档：[eval/datasets/final_v1/README.md](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/datasets/final_v1/README.md)
 
-当前版本仍存在一些问题：
+`final_v1` 当前规模：
+- retrieval: 56 questions
+- grounded QA: 24 questions
+- support governance: 12 questions
+- refusal boundary: 20 questions
 
-1. evidence judge 依赖 LLM，稳定性有限
-2. query rewrite 策略较简单
-3. chunk 仍可能切断 guideline recommendation
-4. evaluation dataset 较小
+说明：
+- `final_v1` 是后续统一 benchmark
+- 如果未来继续扩题，建议新增 `final_v2`
+- 不要覆盖 `final_v1`
 
----
+## Existing Baseline
 
-# 当前优化方向
+目前已经完成的是旧版小样本分层评测 baseline，汇总在：
+- [eval/artifacts/baseline/metrics.json](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/baseline/metrics.json)
 
-未来主要优化方向：
+当前 baseline 摘要：
 
-### Retrieval
+- retrieval_core_v2
+  - `Page Hit@3 = 0.933`
+  - `Page MRR@3 = 0.822`
+  - `Rec Hit@3 = 0.933`
+  - `Rec MRR@3 = 0.822`
 
-* 优化 chunk 策略
-* 提高 guideline 命中率
+- qa_grounded_v1
+  - `Action accuracy = 0.583`
+  - `Must-include pass = 0.000`
+  - `No forbidden claims = 1.000`
+  - `Primary-source pass = 0.583`
 
-### Rerank
+- support_governance_v1
+  - `Action accuracy = 0.750`
+  - `Must-include pass = 0.000`
+  - `No forbidden claims = 1.000`
+  - `Primary-source pass = 0.667`
 
-* 尝试更强的 cross-encoder
+- refusal_boundary_v1
+  - `Refusal accuracy = 0.917`
+  - `Actual refuse rate = 0.917`
 
-### Agent
+对应明细文件在：
+- [eval/artifacts/baseline](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/baseline)
 
-* 改进 evidence judge prompt
-* 优化 query rewrite
+## Recommended Next Step
 
-### Evaluation
+后续建议严格按这个顺序推进：
 
-* 扩展 question dataset
-* 增加 answer quality 评测
+1. 用 `eval/datasets/final_v1/` 重跑一版正式 baseline
+2. 固定这组结果作为后续统一对照
+3. 选择第一个真正的新优化项
 
----
+推荐第一个优化：
+- `hybrid retrieval`
+- 或 `metadata filtering`
 
-# 项目定位
+原因：
+- 它们最容易和当前 retrieval baseline 做清晰对比
+- 改动范围适中
+- 面试价值高，容易讲清楚
 
-该项目用于实验 **Agentic RAG Architecture**：
+## Handoff For Next Codex
 
-* guideline-first retrieval
-* dual corpus retrieval
-* evidence-aware reasoning
-* query rewrite
-* retrieval evaluation
+如果你是下一个接手这个仓库的 Codex，请直接假设以下事实成立：
 
-适合场景：
+- 仓库已经做过结构整理，`src/config.py` 是路径真源
+- 当前主系统是 guideline-first clinical RAG，不是泛化聊天机器人
+- `eval/datasets/final_v1/` 是后续正式实验应使用的统一 benchmark
+- `eval/artifacts/baseline/metrics.json` 是旧版小样本 baseline，不是最终 benchmark baseline
+- 下一步最值得做的是：在 `final_v1` 上重跑 baseline，然后开始第一轮 retrieval 优化实验
+- 除非明确需要升级 benchmark，否则不要覆盖 `final_v1`
 
-* 医疗 guideline QA
-* 法规问答
-* 企业知识库
+## Notes
 
-```
-```
+- 当前仓库保留了部分历史实验和历史索引，用于回溯，不代表它们仍是正式实验入口
+- 简历和最终项目描述应优先采用统一 benchmark 下的最终指标，不要混用不同题集口径

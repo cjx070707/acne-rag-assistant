@@ -1,33 +1,32 @@
-import json
-from pathlib import Path
+import argparse
 from typing import List, Dict, Any
 
-from sentence_transformers import CrossEncoder
+import os
+import sys
 
-IN_PATH  = Path("eval/artifacts/retrieval_results.jsonl")
-OUT_PATH = Path("eval/artifacts/reranked_results_top20.jsonl")
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(THIS_DIR)
+sys.path.insert(0, REPO_ROOT)
+
+from src.config import RETRIEVAL_RESULTS_PATH, RERANKED_RESULTS_PATH
+from eval.common import dump_jsonl, load_jsonl
+from sentence_transformers import CrossEncoder
 
 MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 BATCH_SIZE = 32
 
-def load_jsonl(p: Path) -> List[Dict[str, Any]]:
-    items = []
-    with p.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                items.append(json.loads(line))
-    return items
-
-def dump_jsonl(p: Path, items: List[Dict[str, Any]]) -> None:
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("w", encoding="utf-8") as f:
-        for it in items:
-            f.write(json.dumps(it, ensure_ascii=False) + "\n")
+def parse_args():
+    parser = argparse.ArgumentParser(description="Rerank retrieval candidates with a cross-encoder.")
+    parser.add_argument("--in-path", default=RETRIEVAL_RESULTS_PATH)
+    parser.add_argument("--out-path", default=RERANKED_RESULTS_PATH)
+    parser.add_argument("--model-name", default=MODEL_NAME)
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    return parser.parse_args()
 
 def main():
-    data = load_jsonl(IN_PATH)
-    ce = CrossEncoder(MODEL_NAME)
+    args = parse_args()
+    data = load_jsonl(args.in_path)
+    ce = CrossEncoder(args.model_name)
 
     out = []
     for ex in data:
@@ -38,7 +37,7 @@ def main():
 
         cands = ex["topk"]  # list of chunks
         pairs = [(qtext, c.get("text", "")) for c in cands]
-        scores = ce.predict(pairs, batch_size=BATCH_SIZE)
+        scores = ce.predict(pairs, batch_size=args.batch_size)
 
         # attach rerank score
         for c, s in zip(cands, scores):
@@ -52,8 +51,8 @@ def main():
             "topk": cands_sorted
         })
 
-    dump_jsonl(OUT_PATH, out)
-    print("Wrote:", OUT_PATH)
+    dump_jsonl(args.out_path, out)
+    print("Wrote:", args.out_path)
 
 if __name__ == "__main__":
     main()

@@ -8,9 +8,8 @@ import numpy as np
 from tqdm import tqdm
 import faiss
 
-# ---------------- Paths (robust to CWD / F5) ----------------
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(THIS_DIR) if os.path.basename(THIS_DIR).lower() == "src" else THIS_DIR
+from .config import CHUNKS_ALL_PATH, CHUNKS_MAIN_PATH, CHUNKS_SUPPORT_PATH
+from .config import INDEX_ALL_DIR, INDEX_MAIN_DIR, INDEX_SUPPORT_DIR
 
 # Embedding backend
 OPENAI_MODEL = "text-embedding-3-small"
@@ -20,16 +19,16 @@ BATCH_SIZE = 64
 # Target configs
 TARGET_CONFIG = {
     "main": {
-        "chunks_path": os.path.join(REPO_ROOT, "data", "processed", "chunks_main.jsonl"),
-        "index_dir": os.path.join(REPO_ROOT, "artifacts", "index_main"),
+        "chunks_path": CHUNKS_MAIN_PATH,
+        "index_dir": INDEX_MAIN_DIR,
     },
     "support": {
-        "chunks_path": os.path.join(REPO_ROOT, "data", "processed", "chunks_support.jsonl"),
-        "index_dir": os.path.join(REPO_ROOT, "artifacts", "index_support"),
+        "chunks_path": CHUNKS_SUPPORT_PATH,
+        "index_dir": INDEX_SUPPORT_DIR,
     },
     "all": {
-        "chunks_path": os.path.join(REPO_ROOT, "data", "processed", "chunks.jsonl"),
-        "index_dir": os.path.join(REPO_ROOT, "artifacts", "index"),
+        "chunks_path": CHUNKS_ALL_PATH,
+        "index_dir": INDEX_ALL_DIR,
     },
 }
 

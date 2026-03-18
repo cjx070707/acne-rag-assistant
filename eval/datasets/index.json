@@ -1,0 +1,28 @@
+{
+  "datasets": [
+    {
+      "name": "retrieval_core_v2",
+      "path": "eval/datasets/retrieval_core_v2.jsonl",
+      "size": 30,
+      "purpose": "Retrieval ranking evaluation"
+    },
+    {
+      "name": "qa_grounded_v1",
+      "path": "eval/datasets/qa_grounded_v1.jsonl",
+      "size": 12,
+      "purpose": "Grounded answer evaluation"
+    },
+    {
+      "name": "support_governance_v1",
+      "path": "eval/datasets/support_governance_v1.jsonl",
+      "size": 8,
+      "purpose": "Primary vs support source policy evaluation"
+    },
+    {
+      "name": "refusal_boundary_v1",
+      "path": "eval/datasets/refusal_boundary_v1.jsonl",
+      "size": 12,
+      "purpose": "Refusal and safety boundary evaluation"
+    }
+  ]
+}

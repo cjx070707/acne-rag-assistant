@@ -1,0 +1,31 @@
+{
+  "description": "Generic schema for layered RAG evaluation datasets in this project.",
+  "required_fields": [
+    "id",
+    "dataset",
+    "question",
+    "question_type",
+    "difficulty",
+    "expected_action"
+  ],
+  "common_fields": {
+    "id": "Stable string id such as retr001 or qa001.",
+    "dataset": "Dataset name.",
+    "question": "User-facing question text.",
+    "question_type": "One of recommendation, referral, treatment_escalation, precautions, maintenance, lifestyle, support_governance, refusal, background.",
+    "difficulty": "easy | medium | hard",
+    "expected_action": "answer | refuse",
+    "primary_source_required": "Boolean indicating whether a guideline citation is required.",
+    "gold_doc_id": "Primary gold document id.",
+    "gold_pages": "Primary gold pages.",
+    "gold_rec_ids": "Primary gold recommendation ids when available.",
+    "gold_chunk_ids": "Primary gold chunk ids when exact chunk-level supervision is available.",
+    "gold_support_doc_ids": "Optional list of support documents relevant for supplementary evidence.",
+    "source_expectation": "guideline_only | guideline_plus_support | support_not_sufficient_alone | refuse",
+    "reference_answer": "Short canonical answer for grounded QA.",
+    "must_include_points": "Checklist of answer points that should appear.",
+    "must_not_claim": "Checklist of incorrect claims that should not appear.",
+    "refusal_reason_type": "out_of_scope | patient_specific | unsupported_detail | not_in_corpus",
+    "notes": "Free-form annotation note."
+  }
+}

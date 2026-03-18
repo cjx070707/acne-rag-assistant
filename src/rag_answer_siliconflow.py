@@ -12,6 +12,7 @@ def main():
     ap.add_argument("--topk", type=int, default=DEFAULT_TOP_K)
     ap.add_argument("--prefilter-k", type=int, default=DEFAULT_PREFILTER_K)
     ap.add_argument("--model", type=str, default="deepseek-ai/DeepSeek-V3.2")
+    ap.add_argument("--retrieval-mode", choices=["dense", "hybrid"], default="dense")
     args = ap.parse_args()
 
     out = run_agent_query(
@@ -19,6 +20,7 @@ def main():
         topk=args.topk,
         prefilter_k=args.prefilter_k,
         model_name=args.model,
+        retrieval_mode=args.retrieval_mode,
     )
     print(json.dumps(out, ensure_ascii=False, indent=2))
 

@@ -8,24 +8,22 @@ from typing import TypedDict, Optional, List, Dict, Any, Tuple
 import faiss
 from langgraph.graph import StateGraph, END
 
+from .config import CHUNKS_MAIN_PATH, CHUNKS_SUPPORT_PATH, INDEX_MAIN_DIR, INDEX_SUPPORT_DIR
 from .rag_core import (
     load_jsonl,
     load_id_map_list,
     build_chunk_lookup,
+    build_lexical_stats,
     retrieve_topk_filtered,
+    retrieve_topk_hybrid,
     build_context_and_sources,
     call_llm_siliconflow,
     call_llm_siliconflow_raw,
     REFUSAL_TEXT,
 )
 
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(THIS_DIR) if os.path.basename(THIS_DIR).lower() == "src" else THIS_DIR
-
-DEFAULT_MAIN_INDEX_DIR = os.path.join("artifacts", "index_main")
-DEFAULT_SUPPORT_INDEX_DIR = os.path.join("artifacts", "index_support")
-DEFAULT_MAIN_CHUNKS_PATH = os.path.join("data", "processed", "chunks_main.jsonl")
-DEFAULT_SUPPORT_CHUNKS_PATH = os.path.join("data", "processed", "chunks_support.jsonl")
+DEFAULT_RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "dense").strip().lower() or "dense"
+RESOURCE_CACHE: Dict[str, Tuple[faiss.Index, List[str], Dict[str, Dict[str, Any]], Dict[str, Any]]] = {}
 
 
 class AgentState(TypedDict, total=False):
@@ -36,6 +34,7 @@ class AgentState(TypedDict, total=False):
     topk: int
     prefilter_k: int
     model_name: str
+    retrieval_mode: str
     attempt: int
 
     candidates: List[Tuple[Dict[str, Any], float]]
@@ -51,33 +50,34 @@ class AgentState(TypedDict, total=False):
 
 
 def _load_single_resource(index_dir: str, chunks_path: str):
-    index_dir_abs = os.path.join(REPO_ROOT, index_dir)
-    faiss_path = os.path.join(index_dir_abs, "faiss.index")
-    idmap_path = os.path.join(index_dir_abs, "id_map.json")
-    chunks_path_abs = os.path.join(REPO_ROOT, chunks_path)
+    faiss_path = os.path.join(index_dir, "faiss.index")
+    idmap_path = os.path.join(index_dir, "id_map.json")
 
     if not (os.path.exists(faiss_path) and os.path.exists(idmap_path)):
-        raise FileNotFoundError(f"Missing index files in: {index_dir_abs} (faiss.index / id_map.json)")
-    if not os.path.exists(chunks_path_abs):
-        raise FileNotFoundError(f"Missing chunks file: {chunks_path_abs}")
+        raise FileNotFoundError(f"Missing index files in: {index_dir} (faiss.index / id_map.json)")
+    if not os.path.exists(chunks_path):
+        raise FileNotFoundError(f"Missing chunks file: {chunks_path}")
 
-    chunks = load_jsonl(chunks_path_abs)
+    chunks = load_jsonl(chunks_path)
     chunk_lookup = build_chunk_lookup(chunks)
+    lexical_stats = build_lexical_stats(chunk_lookup)
 
     index = faiss.read_index(faiss_path)
     id_map_list = load_id_map_list(idmap_path)
-    return index, id_map_list, chunk_lookup
+    return index, id_map_list, chunk_lookup, lexical_stats
 
 
-_MAIN_INDEX, _MAIN_ID_MAP_LIST, _MAIN_CHUNK_LOOKUP = _load_single_resource(
-    DEFAULT_MAIN_INDEX_DIR,
-    DEFAULT_MAIN_CHUNKS_PATH,
-)
+def _get_resource(kind: str):
+    if kind in RESOURCE_CACHE:
+        return RESOURCE_CACHE[kind]
 
-_SUPPORT_INDEX, _SUPPORT_ID_MAP_LIST, _SUPPORT_CHUNK_LOOKUP = _load_single_resource(
-    DEFAULT_SUPPORT_INDEX_DIR,
-    DEFAULT_SUPPORT_CHUNKS_PATH,
-)
+    if kind == "main":
+        RESOURCE_CACHE[kind] = _load_single_resource(INDEX_MAIN_DIR, CHUNKS_MAIN_PATH)
+        return RESOURCE_CACHE[kind]
+    if kind == "support":
+        RESOURCE_CACHE[kind] = _load_single_resource(INDEX_SUPPORT_DIR, CHUNKS_SUPPORT_PATH)
+        return RESOURCE_CACHE[kind]
+    raise ValueError(f"Unknown resource kind: {kind}")
 
 
 def _tag_candidates(
@@ -91,44 +91,59 @@ def _tag_candidates(
         out.append((row, float(score)))
     return out
 
-def _retrieve_main_only(query: str, topk: int, prefilter_k: int) -> List[Tuple[Dict[str, Any], float]]:
-    main_items = retrieve_topk_filtered(
-        question=query,
-        index=_MAIN_INDEX,
-        id_map_list=_MAIN_ID_MAP_LIST,
-        chunk_lookup=_MAIN_CHUNK_LOOKUP,
-        top_k=topk,
-        prefilter_k=prefilter_k,
-        doc_filter=None,
-        allow_junk_fallback=True,
-    )
+def _retrieve_single_corpus(
+    *,
+    kind: str,
+    query: str,
+    topk: int,
+    prefilter_k: int,
+    retrieval_mode: str,
+) -> List[Tuple[Dict[str, Any], float]]:
+    index, id_map_list, chunk_lookup, lexical_stats = _get_resource(kind)
 
-    return _tag_candidates(main_items or [], "main")
-def _retrieve_dual(query: str, topk: int, prefilter_k: int) -> List[Tuple[Dict[str, Any], float]]:
-    main_items = retrieve_topk_filtered(
-        question=query,
-        index=_MAIN_INDEX,
-        id_map_list=_MAIN_ID_MAP_LIST,
-        chunk_lookup=_MAIN_CHUNK_LOOKUP,
-        top_k=topk,
-        prefilter_k=prefilter_k,
-        doc_filter=None,
-        allow_junk_fallback=True,
-    )
+    if retrieval_mode == "hybrid":
+        items = retrieve_topk_hybrid(
+            question=query,
+            index=index,
+            id_map_list=id_map_list,
+            chunk_lookup=chunk_lookup,
+            lexical_stats=lexical_stats,
+            top_k=topk,
+            prefilter_k=prefilter_k,
+            doc_filter=None,
+            allow_junk_fallback=True,
+        )
+    else:
+        items = retrieve_topk_filtered(
+            question=query,
+            index=index,
+            id_map_list=id_map_list,
+            chunk_lookup=chunk_lookup,
+            top_k=topk,
+            prefilter_k=prefilter_k,
+            doc_filter=None,
+            allow_junk_fallback=True,
+        )
 
-    support_items = retrieve_topk_filtered(
-        question=query,
-        index=_SUPPORT_INDEX,
-        id_map_list=_SUPPORT_ID_MAP_LIST,
-        chunk_lookup=_SUPPORT_CHUNK_LOOKUP,
-        top_k=topk,
-        prefilter_k=prefilter_k,
-        doc_filter=None,
-        allow_junk_fallback=True,
-    )
+    return _tag_candidates(items or [], kind)
 
-    merged = _tag_candidates(main_items or [], "main") + _tag_candidates(support_items or [], "support")
-    return merged
+
+def _retrieve_dual(query: str, topk: int, prefilter_k: int, retrieval_mode: str) -> List[Tuple[Dict[str, Any], float]]:
+    main_items = _retrieve_single_corpus(
+        kind="main",
+        query=query,
+        topk=topk,
+        prefilter_k=prefilter_k,
+        retrieval_mode=retrieval_mode,
+    )
+    support_items = _retrieve_single_corpus(
+        kind="support",
+        query=query,
+        topk=topk,
+        prefilter_k=prefilter_k,
+        retrieval_mode=retrieval_mode,
+    )
+    return main_items + support_items
 
 
 def _safe_score(x: Tuple[Dict[str, Any], float]) -> float:
@@ -358,8 +373,15 @@ def retrieve_node(state: AgentState) -> AgentState:
     query = state["query"]
     topk = int(state.get("topk", 6))
     prefilter_k = int(state.get("prefilter_k", 120))
+    retrieval_mode = str(state.get("retrieval_mode", DEFAULT_RETRIEVAL_MODE)).lower()
 
-    candidates = _retrieve_main_only(query=query, topk=topk, prefilter_k=prefilter_k)
+    candidates = _retrieve_single_corpus(
+        kind="main",
+        query=query,
+        topk=topk,
+        prefilter_k=prefilter_k,
+        retrieval_mode=retrieval_mode,
+    )
     state["candidates"] = candidates
     state["final_query_used"] = query
     return state
@@ -434,8 +456,14 @@ def second_retrieve_node(state: AgentState) -> AgentState:
     rewritten_query = state.get("rewritten_query") or state["query"]
     topk = int(state.get("topk", 6))
     prefilter_k = int(state.get("prefilter_k", 120))
+    retrieval_mode = str(state.get("retrieval_mode", DEFAULT_RETRIEVAL_MODE)).lower()
 
-    candidates = _retrieve_dual(query=rewritten_query, topk=topk, prefilter_k=prefilter_k)
+    candidates = _retrieve_dual(
+        query=rewritten_query,
+        topk=topk,
+        prefilter_k=prefilter_k,
+        retrieval_mode=retrieval_mode,
+    )
     state["candidates"] = candidates
     return state
 
@@ -570,6 +598,7 @@ def run_agent_query(
     topk: int = 6,
     prefilter_k: int = 120,
     model_name: str = "deepseek-ai/DeepSeek-V3.2",
+    retrieval_mode: str = DEFAULT_RETRIEVAL_MODE,
 ) -> Dict[str, Any]:
     out = GRAPH.invoke(
         {
@@ -577,6 +606,7 @@ def run_agent_query(
             "topk": int(topk),
             "prefilter_k": int(prefilter_k),
             "model_name": model_name,
+            "retrieval_mode": str(retrieval_mode).lower(),
             "attempt": 1,
         }
     )

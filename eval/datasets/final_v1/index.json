@@ -1,0 +1,30 @@
+{
+  "benchmark_name": "final_v1",
+  "description": "Expanded benchmark intended as the stable evaluation set for future RAG experiments.",
+  "datasets": [
+    {
+      "name": "retrieval_core_final_v1",
+      "path": "eval/datasets/final_v1/retrieval_core_final_v1.jsonl",
+      "size": 56,
+      "purpose": "Full recommendation-level retrieval evaluation"
+    },
+    {
+      "name": "qa_grounded_final_v1",
+      "path": "eval/datasets/final_v1/qa_grounded_final_v1.jsonl",
+      "size": 24,
+      "purpose": "Grounded answer and citation behavior evaluation"
+    },
+    {
+      "name": "support_governance_final_v1",
+      "path": "eval/datasets/final_v1/support_governance_final_v1.jsonl",
+      "size": 12,
+      "purpose": "Primary-vs-support evidence governance evaluation"
+    },
+    {
+      "name": "refusal_boundary_final_v1",
+      "path": "eval/datasets/final_v1/refusal_boundary_final_v1.jsonl",
+      "size": 20,
+      "purpose": "Refusal and safety boundary evaluation"
+    }
+  ]
+}

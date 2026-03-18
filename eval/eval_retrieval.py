@@ -1,70 +1,82 @@
-# save as: eval/eval_retrieval.py
 import os
-import json
-from typing import List, Dict
+import argparse
 
-K = 3
+import sys
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-QUESTIONS_PATH = os.path.join(THIS_DIR, "questions.jsonl")
-RESULTS_PATH = os.path.join(THIS_DIR, "artifacts", "reranked_results_top20.jsonl")
+REPO_ROOT = os.path.dirname(THIS_DIR)
+sys.path.insert(0, REPO_ROOT)
+
+from src.config import QUESTIONS_PATH, RETRIEVAL_RESULTS_PATH, RERANKED_RESULTS_PATH
+from eval.common import load_jsonl
 
 
-def load_jsonl(path: str) -> List[Dict]:
-    if not os.path.exists(path):
-        raise FileNotFoundError(path)
-    items = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                items.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Bad JSON at {path}:{line_no}: {e}") from e
-    return items
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate retrieval results against gold doc/page/rec ids.")
+    parser.add_argument("--questions-path", default=QUESTIONS_PATH)
+    parser.add_argument("--results-path", default=RERANKED_RESULTS_PATH)
+    parser.add_argument("--baseline-path", default=RETRIEVAL_RESULTS_PATH)
+    parser.add_argument("--k", type=int, default=3)
+    return parser.parse_args()
 
 
 def main():
-    questions = {q["id"]: q for q in load_jsonl(QUESTIONS_PATH)}
-    results = load_jsonl(RESULTS_PATH)
+    args = parse_args()
+    questions = {q["id"]: q for q in load_jsonl(args.questions_path)}
+    results = load_jsonl(args.results_path)
 
     if not results:
         raise RuntimeError("retrieval results are empty (run dump_retrieval_results.py first)")
 
-    hit = 0
-    mrr = 0.0
+    page_hit = 0
+    page_mrr = 0.0
+    rec_hit = 0
+    rec_mrr = 0.0
+    rec_total = 0
 
     for r in results:
         qid = r["id"]
         gold = questions[qid]
         gold_doc = gold["gold_doc_id"]
         gold_pages = set(gold["gold_pages"])
+        gold_rec_ids = set(gold.get("gold_rec_ids", []))
 
-        rr = 0.0
-        for rank, cand in enumerate(r.get("topk", [])[:K], start=1):
+        page_rr = 0.0
+        rec_rr = 0.0
+        for rank, cand in enumerate(r.get("topk", [])[: args.k], start=1):
             if cand.get("doc_id") == gold_doc and cand.get("page") in gold_pages:
-                hit += 1
-                rr = 1.0 / rank
+                page_hit += 1
+                page_rr = 1.0 / rank
                 break
-        mrr += rr
+        page_mrr += page_rr
+
+        if gold_rec_ids:
+            rec_total += 1
+            for rank, cand in enumerate(r.get("topk", [])[: args.k], start=1):
+                if cand.get("doc_id") == gold_doc and cand.get("rec_id") in gold_rec_ids:
+                    rec_hit += 1
+                    rec_rr = 1.0 / rank
+                    break
+            rec_mrr += rec_rr
 
     n = len(results)
-    print(f"Hit@{K}: {hit/n:.3f}")
-    print(f"MRR@{K}: {mrr/n:.3f}")
-    print("QUESTIONS_PATH:", QUESTIONS_PATH)
-    print("RESULTS_PATH:", RESULTS_PATH)
-    print("RESULTS exists:", os.path.exists(RESULTS_PATH), "size:", os.path.getsize(RESULTS_PATH))
+    print(f"Page Hit@{args.k}: {page_hit/n:.3f}")
+    print(f"Page MRR@{args.k}: {page_mrr/n:.3f}")
+    if rec_total:
+        print(f"Rec Hit@{args.k}: {rec_hit/rec_total:.3f}")
+        print(f"Rec MRR@{args.k}: {rec_mrr/rec_total:.3f}")
+    print("QUESTIONS_PATH:", args.questions_path)
+    print("RESULTS_PATH:", args.results_path)
+    print("RESULTS exists:", os.path.exists(args.results_path), "size:", os.path.getsize(args.results_path))
     print("first topk len:", len(results[0].get("topk", [])))
-    BASELINE_PATH = os.path.join(THIS_DIR, "artifacts", "retrieval_results.jsonl")
+    baseline = load_jsonl(args.baseline_path)
+    reranked = load_jsonl(args.results_path)
 
-    baseline = load_jsonl(BASELINE_PATH)
-    reranked = load_jsonl(RESULTS_PATH)
-
-    for i in range(3):
-        b = [c["chunk_id"] for c in baseline[i]["topk"][:3]]
-        r = [c["chunk_id"] for c in reranked[i]["topk"][:3]]
+    for i in range(min(3, len(results), len(baseline), len(reranked))):
+        b = [c["chunk_id"] for c in baseline[i]["topk"][: args.k]]
+        r = [c["chunk_id"] for c in reranked[i]["topk"][: args.k]]
         print(baseline[i]["id"], "baseline:", b, "reranked:", r)
+
+
 if __name__ == "__main__":
     main()
