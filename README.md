@@ -12,13 +12,17 @@
 - 主链路整理：`ingest -> split -> build_index -> retrieve -> judge -> rewrite -> answer/refuse`
 - 路径与产物统一：集中在 [src/config.py](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/src/config.py)
 - Agent 检索资源改为按需加载，避免 import 时直接加载大索引
+- Retrieval 统一入口已抽到 [src/retrieval.py](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/src/retrieval.py)
+- Retrieval profile 统一入口已抽到 [src/retrieval_profiles.py](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/src/retrieval_profiles.py)
 - 分层评测体系已建立
 - 最终版 benchmark `final_v1` 已创建
-- 旧版小样本 baseline 已完成并归档
+- `final_v1` 正式 baseline 已完成
+- 第一轮 retrieval 实验已完成：`hybrid retrieval`、`metadata filtering`、`query routing v1`
+- `query routing v1` 已完成 retrieval / grounded QA / support governance 三组评测
 
 当前还没有完成：
-- `final_v1` 上的正式 baseline 复跑
-- 第一轮新的 retrieval 优化实验，建议从 `hybrid retrieval` 或 `metadata filtering` 开始
+- 将实验结果正式沉淀到统一 metrics/实验记录
+- 后续可以继续做更严格的 `support governance`
 
 ## System Architecture
 
@@ -49,6 +53,15 @@ User Query
 
 ```bash
 python -m src.rag_answer_siliconflow "your question"
+```
+
+推荐优先用 `retrieval_profile` 跑实验，而不是手动拼很多 flags：
+
+```bash
+python -m src.rag_answer_siliconflow "your question" --retrieval-profile runtime_dense
+python -m src.rag_answer_siliconflow "your question" --retrieval-profile dense_metadata_v1
+python -m src.rag_answer_siliconflow "your question" --retrieval-profile dense_routing_v1
+python -m src.rag_answer_siliconflow "your question" --retrieval-profile hybrid_v1
 ```
 
 调试入口：
@@ -176,7 +189,7 @@ python eval/validate_datasets.py --index-path eval/datasets/final_v1/index.json
 
 ## Existing Baseline
 
-目前已经完成的是旧版小样本分层评测 baseline，汇总在：
+旧版小样本 baseline 汇总在：
 - [eval/artifacts/baseline/metrics.json](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/baseline/metrics.json)
 
 当前 baseline 摘要：
@@ -206,22 +219,113 @@ python eval/validate_datasets.py --index-path eval/datasets/final_v1/index.json
 对应明细文件在：
 - [eval/artifacts/baseline](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/baseline)
 
+## Final_v1 Baseline
+
+`final_v1` 正式 baseline 明细在：
+- [eval/artifacts/final_v1_baseline](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/final_v1_baseline)
+
+当前正式 baseline 摘要：
+
+- retrieval_core_final_v1 reranked
+  - `Page Hit@3 = 0.964`
+  - `Page MRR@3 = 0.923`
+  - `Rec Hit@3 = 0.893`
+  - `Rec MRR@3 = 0.845`
+
+- qa_grounded_final_v1
+  - `Action accuracy = 19/24 = 0.792`
+  - `Must-include pass = 8/24 = 0.333`
+  - `No forbidden claims = 24/24 = 1.000`
+  - `Primary-source pass = 19/24 = 0.792`
+
+- support_governance_final_v1
+  - `Action accuracy = 8/12 = 0.667`
+  - `Answered = 6/12 = 0.500`
+  - `Must-include pass = 0/10 = 0.000`
+  - `No forbidden claims = 10/10 = 1.000`
+  - `Primary-source pass = 5/10 = 0.500`
+
+- refusal_boundary_final_v1
+  - `Refusal accuracy = 16/20 = 0.800`
+  - `Actual refuses = 16/20`
+
+## Retrieval Experiments
+
+第一轮 retrieval 优化已经做过三组：
+
+1. `hybrid_retrieval_v1`
+- 结果目录：
+  - [eval/artifacts/experiments/hybrid_retrieval_v1](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/experiments/hybrid_retrieval_v1)
+- 结果结论：
+  - 没有超过 dense baseline
+  - reranked 后约为：
+  - `Page Hit@3 = 0.911`
+  - `Page MRR@3 = 0.869`
+  - `Rec Hit@3 = 0.821`
+  - `Rec MRR@3 = 0.774`
+- 解释：
+  - 当前 guideline recommendation chunk 已经非常适合 dense retrieval，hybrid 带来的 lexical 信号更多是扰动，而不是有效补召回
+
+2. `metadata_filtering_v1`
+- 结果目录：
+  - [eval/artifacts/experiments/metadata_filtering_v1](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/experiments/metadata_filtering_v1)
+- 方法：
+  - 在统一 retrieval 层中加入基于 `question_type + rec_id section` 的 soft metadata filtering
+- 结果结论：
+  - 在 dense + rerank 上有正收益
+  - reranked 后为：
+  - `Page Hit@3 = 0.964`
+  - `Page MRR@3 = 0.943`
+  - `Rec Hit@3 = 0.911`
+  - `Rec MRR@3 = 0.872`
+- 解释：
+  - 对当前项目来说，减少错误召回比增加额外 lexical 召回更有效
+
+3. `query_routing_v1`
+- 结果目录：
+  - [eval/artifacts/experiments/query_routing_v1](/Users/jessechen/project-大模型应用/course_rag_mvp - ai/eval/artifacts/experiments/query_routing_v1)
+- 方法：
+  - 基于规则的 query routing
+  - 第一轮按 `question_type` 自动启用 metadata filtering
+  - 第二轮按 query 类型决定继续 `main-only` 还是 `main + support`
+- retrieval 结果：
+  - `Page Hit@3 = 0.964`
+  - `Page MRR@3 = 0.943`
+  - `Rec Hit@3 = 0.911`
+  - `Rec MRR@3 = 0.872`
+- grounded QA 结果：
+  - `Action accuracy = 23/24 = 0.958`
+  - `Must-include pass = 10/24 = 0.417`
+  - `No forbidden claims = 24/24 = 1.000`
+  - `Primary-source pass = 23/24 = 0.958`
+- support governance 结果：
+  - `Action accuracy = 8/12 = 0.667`
+  - `Answered = 8/12 = 0.667`
+  - `Must-include pass = 0/10 = 0.000`
+  - `No forbidden claims = 10/10 = 1.000`
+  - `Primary-source pass = 7/10 = 0.700`
+- 结果结论：
+  - 在 retrieval 指标上与 `metadata_filtering_v1` 基本一致
+  - 但在 grounded QA 上明显优于当前 `final_v1 baseline`
+  - 对 support governance 有部分帮助，尤其是 `Answered` 和 `Primary-source pass`
+  - `Must-include pass` 仍然偏弱，说明回答完整性和 evidence policy 还需要继续强化
+
 ## Recommended Next Step
 
 后续建议严格按这个顺序推进：
 
-1. 用 `eval/datasets/final_v1/` 重跑一版正式 baseline
-2. 固定这组结果作为后续统一对照
-3. 选择第一个真正的新优化项
+1. 把 `query_routing_v1` 的结果正式沉淀成统一 metrics / 实验说明
+2. 在同一套 benchmark 上继续做下一轮 retrieval 优化
+3. 优先考虑更严格的 `support governance`
 
-推荐第一个优化：
-- `hybrid retrieval`
-- 或 `metadata filtering`
+当前最推荐的下一个优化：
+- `support governance` 强化
 
 原因：
-- 它们最容易和当前 retrieval baseline 做清晰对比
-- 改动范围适中
-- 面试价值高，容易讲清楚
+- `hybrid retrieval` 已验证收益不佳
+- `metadata filtering` 已验证有效
+- `query routing v1` 已验证对 grounded QA 有明显帮助
+- 当前最明显的短板转移到了回答完整性与 support evidence boundary
 
 ## Handoff For Next Codex
 
@@ -230,8 +334,14 @@ python eval/validate_datasets.py --index-path eval/datasets/final_v1/index.json
 - 仓库已经做过结构整理，`src/config.py` 是路径真源
 - 当前主系统是 guideline-first clinical RAG，不是泛化聊天机器人
 - `eval/datasets/final_v1/` 是后续正式实验应使用的统一 benchmark
+- `src/retrieval.py` 已经是统一 retrieval 入口
+- `src/retrieval_profiles.py` 已经是 retrieval experiment config 的统一入口
 - `eval/artifacts/baseline/metrics.json` 是旧版小样本 baseline，不是最终 benchmark baseline
-- 下一步最值得做的是：在 `final_v1` 上重跑 baseline，然后开始第一轮 retrieval 优化实验
+- `eval/artifacts/final_v1_baseline/` 才是当前正式 baseline
+- `hybrid_retrieval_v1` 已完成，结论是对当前项目没有提升
+- `metadata_filtering_v1` 已完成，结论是对 dense + rerank 有正收益
+- `query_routing_v1` 已完成，结论是 retrieval 指标与 metadata filtering 持平，但 grounded QA 明显更好
+- 目前最值得继续做的是：`support governance` 强化
 - 除非明确需要升级 benchmark，否则不要覆盖 `final_v1`
 
 ## Notes

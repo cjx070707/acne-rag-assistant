@@ -10,6 +10,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from eval.common import dump_jsonl, load_jsonl, normalize_text, safe_ratio
 from src.agent_graph import run_agent_query
+from src.retrieval_profiles import DEFAULT_RUNTIME_RETRIEVAL_PROFILE
 
 
 DEFAULT_DATASET = str(Path("eval/datasets/qa_grounded_v1.jsonl"))
@@ -24,7 +25,9 @@ def parse_args():
     parser.add_argument("--model", default="deepseek-ai/DeepSeek-V3.2")
     parser.add_argument("--topk", type=int, default=6)
     parser.add_argument("--prefilter-k", type=int, default=120)
-    parser.add_argument("--retrieval-mode", choices=["dense", "hybrid"], default="dense")
+    parser.add_argument("--retrieval-profile", default=DEFAULT_RUNTIME_RETRIEVAL_PROFILE)
+    parser.add_argument("--retrieval-mode", choices=["dense", "hybrid"], default=None)
+    parser.add_argument("--query-routing", action="store_true", default=None)
     return parser.parse_args()
 
 
@@ -60,7 +63,9 @@ def main():
             topk=args.topk,
             prefilter_k=args.prefilter_k,
             model_name=args.model,
+            retrieval_profile=args.retrieval_profile,
             retrieval_mode=args.retrieval_mode,
+            query_routing=args.query_routing,
         )
         answer = result.get("answer", "")
         sources = result.get("sources", [])

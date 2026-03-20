@@ -5,25 +5,18 @@ import os
 import re
 from typing import TypedDict, Optional, List, Dict, Any, Tuple
 
-import faiss
 from langgraph.graph import StateGraph, END
 
-from .config import CHUNKS_MAIN_PATH, CHUNKS_SUPPORT_PATH, INDEX_MAIN_DIR, INDEX_SUPPORT_DIR
-from .rag_core import (
-    load_jsonl,
-    load_id_map_list,
-    build_chunk_lookup,
-    build_lexical_stats,
-    retrieve_topk_filtered,
-    retrieve_topk_hybrid,
-    build_context_and_sources,
-    call_llm_siliconflow,
-    call_llm_siliconflow_raw,
-    REFUSAL_TEXT,
+from .retrieval_profiles import DEFAULT_RUNTIME_RETRIEVAL_PROFILE, resolve_retrieval_profile
+from .retrieval import (
+    DEFAULT_RETRIEVAL_MODE,
+    build_context,
+    rerank_candidates,
+    route_query,
+    retrieve_dual,
+    retrieve_main,
 )
-
-DEFAULT_RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "dense").strip().lower() or "dense"
-RESOURCE_CACHE: Dict[str, Tuple[faiss.Index, List[str], Dict[str, Dict[str, Any]], Dict[str, Any]]] = {}
+from .rag_core import call_llm_siliconflow, call_llm_siliconflow_raw, REFUSAL_TEXT
 
 
 class AgentState(TypedDict, total=False):
@@ -34,7 +27,11 @@ class AgentState(TypedDict, total=False):
     topk: int
     prefilter_k: int
     model_name: str
-    retrieval_mode: str
+    retrieval_profile: str
+    retrieval_mode: Optional[str]
+    metadata_filtering: Optional[bool]
+    query_routing: Optional[bool]
+    question_type: Optional[str]
     attempt: int
 
     candidates: List[Tuple[Dict[str, Any], float]]
@@ -47,170 +44,6 @@ class AgentState(TypedDict, total=False):
     judge_reason: str
 
     answer: str
-
-
-def _load_single_resource(index_dir: str, chunks_path: str):
-    faiss_path = os.path.join(index_dir, "faiss.index")
-    idmap_path = os.path.join(index_dir, "id_map.json")
-
-    if not (os.path.exists(faiss_path) and os.path.exists(idmap_path)):
-        raise FileNotFoundError(f"Missing index files in: {index_dir} (faiss.index / id_map.json)")
-    if not os.path.exists(chunks_path):
-        raise FileNotFoundError(f"Missing chunks file: {chunks_path}")
-
-    chunks = load_jsonl(chunks_path)
-    chunk_lookup = build_chunk_lookup(chunks)
-    lexical_stats = build_lexical_stats(chunk_lookup)
-
-    index = faiss.read_index(faiss_path)
-    id_map_list = load_id_map_list(idmap_path)
-    return index, id_map_list, chunk_lookup, lexical_stats
-
-
-def _get_resource(kind: str):
-    if kind in RESOURCE_CACHE:
-        return RESOURCE_CACHE[kind]
-
-    if kind == "main":
-        RESOURCE_CACHE[kind] = _load_single_resource(INDEX_MAIN_DIR, CHUNKS_MAIN_PATH)
-        return RESOURCE_CACHE[kind]
-    if kind == "support":
-        RESOURCE_CACHE[kind] = _load_single_resource(INDEX_SUPPORT_DIR, CHUNKS_SUPPORT_PATH)
-        return RESOURCE_CACHE[kind]
-    raise ValueError(f"Unknown resource kind: {kind}")
-
-
-def _tag_candidates(
-    items: List[Tuple[Dict[str, Any], float]],
-    source_type: str,
-) -> List[Tuple[Dict[str, Any], float]]:
-    out: List[Tuple[Dict[str, Any], float]] = []
-    for chunk, score in items:
-        row = dict(chunk)
-        row["source_type"] = source_type
-        out.append((row, float(score)))
-    return out
-
-def _retrieve_single_corpus(
-    *,
-    kind: str,
-    query: str,
-    topk: int,
-    prefilter_k: int,
-    retrieval_mode: str,
-) -> List[Tuple[Dict[str, Any], float]]:
-    index, id_map_list, chunk_lookup, lexical_stats = _get_resource(kind)
-
-    if retrieval_mode == "hybrid":
-        items = retrieve_topk_hybrid(
-            question=query,
-            index=index,
-            id_map_list=id_map_list,
-            chunk_lookup=chunk_lookup,
-            lexical_stats=lexical_stats,
-            top_k=topk,
-            prefilter_k=prefilter_k,
-            doc_filter=None,
-            allow_junk_fallback=True,
-        )
-    else:
-        items = retrieve_topk_filtered(
-            question=query,
-            index=index,
-            id_map_list=id_map_list,
-            chunk_lookup=chunk_lookup,
-            top_k=topk,
-            prefilter_k=prefilter_k,
-            doc_filter=None,
-            allow_junk_fallback=True,
-        )
-
-    return _tag_candidates(items or [], kind)
-
-
-def _retrieve_dual(query: str, topk: int, prefilter_k: int, retrieval_mode: str) -> List[Tuple[Dict[str, Any], float]]:
-    main_items = _retrieve_single_corpus(
-        kind="main",
-        query=query,
-        topk=topk,
-        prefilter_k=prefilter_k,
-        retrieval_mode=retrieval_mode,
-    )
-    support_items = _retrieve_single_corpus(
-        kind="support",
-        query=query,
-        topk=topk,
-        prefilter_k=prefilter_k,
-        retrieval_mode=retrieval_mode,
-    )
-    return main_items + support_items
-
-
-def _safe_score(x: Tuple[Dict[str, Any], float]) -> float:
-    _, score = x
-    try:
-        return float(score)
-    except Exception:
-        return 0.0
-
-
-def _fallback_rerank(
-    query: str,
-    candidates: List[Tuple[Dict[str, Any], float]],
-    topk: int,
-) -> List[Tuple[Dict[str, Any], float]]:
-    def adjusted_score(x: Tuple[Dict[str, Any], float]) -> float:
-        chunk, score = x
-        bonus = 0.0
-
-        source_type = (chunk.get("source_type") or "").lower()
-        doc_id = (chunk.get("doc_id") or "").lower()
-        text = (chunk.get("text") or "").lower()
-
-        # main 永远优先于 support
-        if source_type == "main":
-            bonus += 0.12
-        elif source_type == "support":
-            bonus -= 0.03
-
-        # guideline 文档再加一点
-        if "nice_ng198_guideline" in doc_id:
-            bonus += 0.05
-
-        # support 中明显属于附录/研究建议/流程图/森林图的垃圾页降权
-        bad_patterns = [
-            "study selection",
-            "research recommendations",
-            "forest plots",
-            "review question",
-            "appendix",
-        ]
-        if any(p in text for p in bad_patterns):
-            bonus -= 0.15
-
-        return float(score) + bonus
-
-    return sorted(candidates, key=adjusted_score, reverse=True)[:topk]
-
-
-def _build_context_from_candidates(
-    candidates: List[Tuple[Dict[str, Any], float]]
-) -> Tuple[str, List[Dict[str, Any]]]:
-    if not candidates:
-        return "", []
-
-    context, sources = build_context_and_sources(candidates, max_chars_per_chunk=900)
-
-    repaired_sources: List[Dict[str, Any]] = []
-    for i, src in enumerate(sources):
-        row = dict(src)
-        if i < len(candidates):
-            chunk, _ = candidates[i]
-            if "source_type" in chunk:
-                row["source_type"] = chunk["source_type"]
-        repaired_sources.append(row)
-
-    return context, repaired_sources
 
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
@@ -373,14 +206,39 @@ def retrieve_node(state: AgentState) -> AgentState:
     query = state["query"]
     topk = int(state.get("topk", 6))
     prefilter_k = int(state.get("prefilter_k", 120))
-    retrieval_mode = str(state.get("retrieval_mode", DEFAULT_RETRIEVAL_MODE)).lower()
+    retrieval_profile = str(state.get("retrieval_profile", DEFAULT_RUNTIME_RETRIEVAL_PROFILE))
+    resolved = resolve_retrieval_profile(
+        retrieval_profile,
+        {
+            "retrieval_mode": state.get("retrieval_mode"),
+            "metadata_filtering": state.get("metadata_filtering"),
+            "query_routing": state.get("query_routing"),
+            "apply_filtering": state.get("apply_filtering"),
+        },
+    )
+    retrieval_mode = str(resolved.get("retrieval_mode", DEFAULT_RETRIEVAL_MODE)).lower()
+    metadata_filtering = bool(resolved.get("metadata_filtering", False))
+    query_routing = bool(resolved.get("query_routing", False))
+    question_type = state.get("question_type")
 
-    candidates = _retrieve_single_corpus(
-        kind="main",
-        query=query,
-        topk=topk,
-        prefilter_k=prefilter_k,
-        retrieval_mode=retrieval_mode,
+    if query_routing:
+        decision = route_query(query, question_type=question_type, attempt=1)
+        metadata_filtering = bool(decision["metadata_filtering"])
+        question_type = decision["question_type"]
+        state["question_type"] = question_type
+
+    candidates = retrieve_main(
+        query,
+        {
+            "retrieval_profile": retrieval_profile,
+            "topk": topk,
+            "prefilter_k": prefilter_k,
+            "retrieval_mode": retrieval_mode,
+            "metadata_filtering": metadata_filtering,
+            "apply_filtering": resolved.get("apply_filtering"),
+            "question_type": question_type,
+            "query_routing": query_routing,
+        },
     )
     state["candidates"] = candidates
     state["final_query_used"] = query
@@ -391,8 +249,8 @@ def rerank_node(state: AgentState) -> AgentState:
     candidates = state.get("candidates", []) or []
     topk = int(state.get("topk", 6))
 
-    reranked = _fallback_rerank(state["query"], candidates, topk=topk)
-    context, sources = _build_context_from_candidates(reranked)
+    reranked = rerank_candidates(state["query"], candidates, topk=topk)
+    context, sources = build_context(reranked)
 
     state["reranked"] = reranked
     state["context"] = context
@@ -456,14 +314,57 @@ def second_retrieve_node(state: AgentState) -> AgentState:
     rewritten_query = state.get("rewritten_query") or state["query"]
     topk = int(state.get("topk", 6))
     prefilter_k = int(state.get("prefilter_k", 120))
-    retrieval_mode = str(state.get("retrieval_mode", DEFAULT_RETRIEVAL_MODE)).lower()
-
-    candidates = _retrieve_dual(
-        query=rewritten_query,
-        topk=topk,
-        prefilter_k=prefilter_k,
-        retrieval_mode=retrieval_mode,
+    retrieval_profile = str(state.get("retrieval_profile", DEFAULT_RUNTIME_RETRIEVAL_PROFILE))
+    resolved = resolve_retrieval_profile(
+        retrieval_profile,
+        {
+            "retrieval_mode": state.get("retrieval_mode"),
+            "metadata_filtering": state.get("metadata_filtering"),
+            "query_routing": state.get("query_routing"),
+            "apply_filtering": state.get("apply_filtering"),
+        },
     )
+    retrieval_mode = str(resolved.get("retrieval_mode", DEFAULT_RETRIEVAL_MODE)).lower()
+    metadata_filtering = bool(resolved.get("metadata_filtering", False))
+    query_routing = bool(resolved.get("query_routing", False))
+    question_type = state.get("question_type")
+
+    use_support = True
+    if query_routing:
+        decision = route_query(rewritten_query, question_type=question_type, attempt=2)
+        metadata_filtering = bool(decision["metadata_filtering"])
+        question_type = decision["question_type"]
+        use_support = bool(decision["use_support"])
+        state["question_type"] = question_type
+
+    if use_support:
+        candidates = retrieve_dual(
+            rewritten_query,
+            {
+                "retrieval_profile": retrieval_profile,
+                "topk": topk,
+                "prefilter_k": prefilter_k,
+                "retrieval_mode": retrieval_mode,
+                "metadata_filtering": metadata_filtering,
+                "apply_filtering": resolved.get("apply_filtering"),
+                "question_type": question_type,
+                "query_routing": query_routing,
+            },
+        )
+    else:
+        candidates = retrieve_main(
+            rewritten_query,
+            {
+                "retrieval_profile": retrieval_profile,
+                "topk": topk,
+                "prefilter_k": prefilter_k,
+                "retrieval_mode": retrieval_mode,
+                "metadata_filtering": metadata_filtering,
+                "apply_filtering": resolved.get("apply_filtering"),
+                "question_type": question_type,
+                "query_routing": query_routing,
+            },
+        )
     state["candidates"] = candidates
     return state
 
@@ -473,8 +374,8 @@ def second_rerank_node(state: AgentState) -> AgentState:
     candidates = state.get("candidates", []) or []
     topk = int(state.get("topk", 6))
 
-    reranked = _fallback_rerank(rewritten_query, candidates, topk=topk)
-    context, sources = _build_context_from_candidates(reranked)
+    reranked = rerank_candidates(rewritten_query, candidates, topk=topk)
+    context, sources = build_context(reranked)
 
     state["reranked"] = reranked
     state["context"] = context
@@ -598,7 +499,10 @@ def run_agent_query(
     topk: int = 6,
     prefilter_k: int = 120,
     model_name: str = "deepseek-ai/DeepSeek-V3.2",
-    retrieval_mode: str = DEFAULT_RETRIEVAL_MODE,
+    retrieval_profile: str = DEFAULT_RUNTIME_RETRIEVAL_PROFILE,
+    retrieval_mode: Optional[str] = None,
+    metadata_filtering: Optional[bool] = None,
+    query_routing: Optional[bool] = None,
 ) -> Dict[str, Any]:
     out = GRAPH.invoke(
         {
@@ -606,7 +510,10 @@ def run_agent_query(
             "topk": int(topk),
             "prefilter_k": int(prefilter_k),
             "model_name": model_name,
-            "retrieval_mode": str(retrieval_mode).lower(),
+            "retrieval_profile": retrieval_profile,
+            "retrieval_mode": str(retrieval_mode).lower() if retrieval_mode else None,
+            "metadata_filtering": metadata_filtering,
+            "query_routing": query_routing,
             "attempt": 1,
         }
     )
